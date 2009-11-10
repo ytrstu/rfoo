@@ -198,7 +198,7 @@ def _dispatch(handler, data):
 
 
 
-def start_server(port=DEFAULT_PORT, host=LOOPBACK, on_accept=threaded_connection, handler=EchoHandler):
+def start_server(host=LOOPBACK, port=DEFAULT_PORT, on_accept=threaded_connection, handler=EchoHandler):
     """Start server."""
 
     logging.info('Enter, handler=%r, port=%d, host=%s.', callable, port, host)
@@ -220,7 +220,7 @@ def start_server(port=DEFAULT_PORT, host=LOOPBACK, on_accept=threaded_connection
 
 
 
-def connect(host='localhost', port=DEFAULT_PORT):
+def connect(host=LOOPBACK, port=DEFAULT_PORT):
     """Connect to server."""
 
     logging.info('Enter, host=%s, port=%d.', host, port)

@@ -180,6 +180,7 @@ def _dispatch(handler, data):
         f = getattr(handler, method)
         if not inspect.ismethod(f):
             logging.warning('Attempt to call non-method, attribute=%s.', method)
+            raise ValueError(method)
 
         #
         # Convert kwargs keys from unicode to strings.

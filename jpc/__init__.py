@@ -246,34 +246,32 @@ class Proxy(object):
     def __getattr__(self, name):
         """Return proxy version of method."""
 
-        conn = self._conn
-        class Method(object):
-            def __call__(self, *args, **kwargs):
-                """Call method on server."""
-                
-                id = '%08x' % random.randint(0, 2 << 32)
-                data = json.dumps({
-                    'method': name,
-                    'params': args,
-                    'kwargs': kwargs,
-                    'id': id,
-                })
+        def proxy(*args, **kwargs):
+            """Call method on server."""
+            
+            id = '%08x' % random.randint(0, 2 << 32)
+            data = json.dumps({
+                'method': name,
+                'params': args,
+                'kwargs': kwargs,
+                'id': id,
+            })
 
-                _write(conn, data)
-                response = _read(conn)
-                
-                r = json.loads(response)
-                if r['id'] != id:
-                    logging.error('Received unmatching id. sent=%s, received=%s.', id, r['id'])
-                    raise ValueError(r['id'])
+            _write(self._conn, data)
+            response = _read(self._conn)
+            
+            r = json.loads(response)
+            if r['id'] != id:
+                logging.error('Received unmatching id. sent=%s, received=%s.', id, r['id'])
+                raise ValueError(r['id'])
 
-                if r.get('error', None) is not None:
-                    logging.warning('Error returned by proxy, error=%s.', r['error'])
-                    raise ServerError(r['error'])
+            if r.get('error', None) is not None:
+                logging.warning('Error returned by proxy, error=%s.', r['error'])
+                raise ServerError(r['error'])
 
-                return r['result']
+            return r['result']
 
-        return Method()
+        return proxy
 
 
 

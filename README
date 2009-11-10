@@ -7,20 +7,20 @@ Website: http://www.winpdb.org/
 Version: 1.0
 
 
-
 Requirements
 
-    Depends on simplejson.
+    Depends on simplejson on Python versions earlier than 2.6. Use 
+    simplejson > 2.0 for best performance.
 
-    Compatible with Python 2.x and tested on GNU/Linux RHEL 5.3 & 
-    Ubuntu 8.10 64bit.
+    Compatible with Python 2.x and tested on GNU/Linux:
+     RHEL 5.3 64bit, Python 2.4, 2.6
+     Ubuntu 8.10 64bit, Python 2.5.
 
 	
 Installation
 
     Enter the distribution folder and type the following in a console:
-
-        sudo python setup.py install
+     sudo python setup.py install
 
 
 

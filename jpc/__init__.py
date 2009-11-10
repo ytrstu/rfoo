@@ -38,7 +38,6 @@
 
 
 
-import simplejson
 import logging
 import inspect
 import random
@@ -50,6 +49,16 @@ import time
 import copy
 import sys
 import os
+
+try:
+    #
+    # Use version > 2.0, for significant performance gains over
+    # older versions on some platforms. Can install easily with: 
+    # python easy_install simplejson
+    #
+    import simplejson as json
+except ImportError:
+    import json
 
 
 
@@ -170,10 +179,10 @@ def _dispatch(handler, data):
     """Dispatch call to handler."""
 
     try:        
-        json = simplejson.loads(data)
-        id = json['id']
+        work_item = json.loads(data)
+        id = work_item['id']
 
-        method = json['method']
+        method = work_item['method']
         if method.startswith('_'):
             logging.warning('Attempt to call non-public, attribute=%s.', method)
             raise ValueError(method)
@@ -185,16 +194,16 @@ def _dispatch(handler, data):
         #
         # Convert kwargs keys from unicode to strings.
         #
-        kwargs = json.get('kwargs', {})
+        kwargs = work_item.get('kwargs', {})
         kwargs = dict((str(k), v) for k, v in kwargs.items())
-        args = json.get('params', ())
+        args = work_item.get('params', ())
 
         result = f(*args, **kwargs)
-        return simplejson.dumps({'result': result, 'error': None, 'id': id})
+        return json.dumps({'result': result, 'error': None, 'id': id})
 
     except Exception, e:
         logging.warning('Caught exception raised by callable.', exc_info=True)
-        return simplejson.dumps({'result': None, 'error': repr(e), 'id': id})
+        return json.dumps({'result': None, 'error': repr(e), 'id': id})
 
 
 
@@ -252,7 +261,7 @@ class Proxy(object):
                 """Call method on server."""
                 
                 id = '%08x' % random.randint(0, 2 << 32)
-                data = simplejson.dumps({
+                data = json.dumps({
                     'method': name,
                     'params': args,
                     'kwargs': kwargs,
@@ -262,7 +271,7 @@ class Proxy(object):
                 _write(conn, data)
                 response = _read(conn)
                 
-                r = simplejson.loads(response)
+                r = json.loads(response)
                 if r['id'] != id:
                     logging.error('Received unmatching id. sent=%s, received=%s.', id, r['id'])
                     raise ValueError(r['id'])

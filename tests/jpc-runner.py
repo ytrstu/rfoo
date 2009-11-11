@@ -25,6 +25,7 @@
 
 
 
+import threading
 import logging
 import getopt
 import time
@@ -60,6 +61,7 @@ Start client:
 -oHOST      Set HOST.
 -pPORT      Set PORT.
 -nN         Repeat client call N times.
+-tN         Number of client threads to use.
 """ % {'name': scriptName}
 
 
@@ -70,7 +72,7 @@ def main():
     try:
         options, args = getopt.getopt(
             sys.argv[1:], 
-            'hvsco:p:n:', 
+            'hvsco:p:n:t:', 
             ['help']
             )
         options = dict(options)
@@ -94,13 +96,14 @@ def main():
         stream=sys.stderr
     )
     
+    host = options.get('-o', '127.0.0.1')
     port = int(options.get('-p', jpc.DEFAULT_PORT))
 
     t0 = time.time()
     try:
         if '-s' in options:
             logging.warning('Start as server.')
-            jpc.start_server(port=port)
+            jpc.start_server(host=host, port=port)
             return
             
         logging.warning('Start as client.')
@@ -110,21 +113,36 @@ def main():
         else:
             data = 'x' * 10000
 
-        host = options.get('-o', '127.0.0.1')
         n = int(options.get('-n', 1))
+        t = int(options.get('-t', 1))
+        m = n / t
 
-        if '-c' in options:
-            for i in xrange(n):
+        def client():
+            if '-c' in options:
+                for i in xrange(m):
+                    connection = jpc.connect(host=host, port=port)
+                    r = jpc.Proxy(connection).echo_args(data)
+                    logging.info('Received %r from proxy.', r)
+                    connection.close()
+
+            else:
                 connection = jpc.connect(host=host, port=port)
-                r = jpc.Proxy(connection).echo_args(data)
-                logging.info('Received %r from proxy.', r)
-                connection.close()
+                for i in xrange(m):
+                    r = jpc.Proxy(connection).echo_args(data)
+                    logging.info('Received %r from proxy.', r)
 
-        else:
-            connection = jpc.connect(host=host, port=port)
-            for i in xrange(n):
-                r = jpc.Proxy(connection).echo_args(data)
-                logging.info('Received %r from proxy.', r)
+        if t == 1:
+            client()
+            return
+
+        threads = [threading.Thread(target=client) for i in range(t)]
+        t0 = time.time()
+        
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
 
     finally:
         logging.warning('Running time, %f seconds.', time.time() - t0)

@@ -64,7 +64,7 @@ __version__ = '1.0.1'
 #
 LOOPBACK = '127.0.0.1'
 DEFAULT_PORT = 52431
-CHUNK_SIZE = 1024
+BUFFER_SIZE = 4096
 
 MAX_THREADS = 256
 
@@ -295,11 +295,11 @@ def _read(socket_, length=None, debug=True):
 
     data = ''
     while len(data) < length:
-        chunk_size = min(length, CHUNK_SIZE)
-        chunk = socket_.recv(chunk_size)
-        if not chunk:
+        buffer_size = min(length, BUFFER_SIZE)
+        buffer = socket_.recv(buffer_size)
+        if not buffer:
             raise EofError()
-        data += chunk
+        data += buffer
 
     if debug:
         logging.debug('Return data=%.512s.', data)

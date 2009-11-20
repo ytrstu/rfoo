@@ -63,7 +63,7 @@ except ImportError:
 
 
 
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 #
 # Bind to loopback to restrict server to local requests.

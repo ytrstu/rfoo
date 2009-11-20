@@ -63,7 +63,7 @@ except ImportError:
 
 
 
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 #
 # Bind to loopback to restrict server to local requests.
@@ -339,27 +339,27 @@ class Proxy(object):
 
 
 
-def _write(socket_, data):
+def _write(conn, data):
     """Write length prefixed data to socket."""
 
     logging.debug('Enter, data=%.512s...', data)
 
-    bytes = as_bytes(data)
-    length = len(data)
-    socket_.sendall(as_bytes('%08x' % length) + bytes)
+    bytes_ = as_bytes(data)
+    length = len(bytes_)
+    conn.sendall(as_bytes('%08x' % length) + bytes_)
 
 
 
-def _read(socket_, length=None, debug=True):
+def _read(conn, length=None, debug=True):
     """Read length prefixed data from socket."""
 
     if length is None:
-        length = int(_read(socket_, 8, False), 16)
+        length = int(_read(conn, 8, False), 16)
 
     data = as_bytes('')
     while len(data) < length:
         buffer_size = min(length, BUFFER_SIZE)
-        buffer = socket_.recv(buffer_size)
+        buffer = conn.recv(buffer_size)
         if not buffer:
             raise EofError()
         data += buffer

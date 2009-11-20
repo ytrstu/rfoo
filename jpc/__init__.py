@@ -42,8 +42,14 @@ import logging
 import inspect
 import random
 import socket
-import thread
-import Queue
+import sys
+
+try:
+    import thread
+    import Queue
+except:
+    import _thread as thread
+    import queue as Queue
 
 try:
     #
@@ -68,6 +74,8 @@ BUFFER_SIZE = 4096
 
 MAX_THREADS = 256
 
+ISPY3K = sys.version_info[0] >= 3
+
 
 
 class ServerError(Exception):
@@ -77,6 +85,60 @@ class ServerError(Exception):
 
 class EofError(Exception):
     """Socket end of file."""
+
+
+
+def is_unicode(s):
+    """Test if string is unicode."""
+
+    if ISPY3K:
+        return type(s) == str
+
+    return type(s) == unicode
+
+
+
+def as_bytes(s, encoding = 'utf-8', fstrict = True):
+    """Encode unicode string into bytes."""
+
+    if not is_unicode(s):
+        return s
+
+    if fstrict:
+        b = s.encode(encoding)
+    else:
+        b = s.encode(encoding, 'replace')
+
+    return b
+
+
+
+def as_string(s, encoding = 'utf-8', fstrict = False):
+    """Decode or encode (unicode) string to str type."""
+
+    #
+    # On Python 3.x str type is unicode.
+    #
+    if ISPY3K:
+        if is_unicode(s):
+            return s
+
+        if fstrict:
+            e = s.decode(encoding)
+        else:
+            e = s.decode(encoding, 'replace')
+
+        return e
+
+    if not is_unicode(s):
+        return s
+
+    if fstrict:
+        e = s.encode(encoding)
+    else:
+        e = s.encode(encoding, 'replace')
+
+    return e
 
 
 
@@ -194,16 +256,16 @@ def _dispatch(handler, data):
         result = f(*args, **kwargs)
         return json.dumps({'result': result, 'error': None, 'id': id})
 
-    except Exception, e:
+    except Exception:
         logging.warning('Caught exception raised by callable.', exc_info=True)
-        return json.dumps({'result': None, 'error': repr(e), 'id': id})
+        return json.dumps({'result': None, 'error': repr(sys.exc_info()[1]), 'id': id})
 
 
 
 def start_server(host=LOOPBACK, port=DEFAULT_PORT, on_accept=threaded_connection, handler=EchoHandler):
     """Start server."""
 
-    logging.info('Enter, handler=%r, port=%d, host=%s.', callable, port, host)
+    logging.info('Enter, handler=%r, port=%d, host=%s.', handler, port, host)
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -282,8 +344,9 @@ def _write(socket_, data):
 
     logging.debug('Enter, data=%.512s...', data)
 
+    bytes = as_bytes(data)
     length = len(data)
-    socket_.sendall('%08x' % length + data)
+    socket_.sendall(as_bytes('%08x' % length) + bytes)
 
 
 
@@ -293,7 +356,7 @@ def _read(socket_, length=None, debug=True):
     if length is None:
         length = int(_read(socket_, 8, False), 16)
 
-    data = ''
+    data = as_bytes('')
     while len(data) < length:
         buffer_size = min(length, BUFFER_SIZE)
         buffer = socket_.recv(buffer_size)
@@ -304,7 +367,7 @@ def _read(socket_, length=None, debug=True):
     if debug:
         logging.debug('Return data=%.512s.', data)
 
-    return data
+    return as_string(data)
 
 
 

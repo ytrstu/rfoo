@@ -47,7 +47,7 @@ else:
 
 def print_usage():
     scriptName = os.path.basename(sys.argv[0])
-    print """
+    sys.stdout.write("""
 Start server:
 %(name)s -s [-pPORT]
 
@@ -62,7 +62,7 @@ Start client:
 -pPORT      Set PORT.
 -nN         Repeat client call N times.
 -tN         Number of client threads to use.
-""" % {'name': scriptName}
+""" % {'name': scriptName})
 
 
 
@@ -115,11 +115,11 @@ def main():
 
         n = int(options.get('-n', 1))
         t = int(options.get('-t', 1))
-        m = n / t
+        m = int(n / t)
 
         def client():
             if '-c' in options:
-                for i in xrange(m):
+                for i in range(m):
                     connection = jpc.connect(host=host, port=port)
                     r = jpc.Proxy(connection).echo_args(data)
                     logging.info('Received %r from proxy.', r)
@@ -127,7 +127,7 @@ def main():
 
             else:
                 connection = jpc.connect(host=host, port=port)
-                for i in xrange(m):
+                for i in range(m):
                     r = jpc.Proxy(connection).echo_args(data)
                     logging.info('Received %r from proxy.', r)
 

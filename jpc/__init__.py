@@ -229,7 +229,8 @@ threaded_connection = threaded(_serve_connection)
 def _dispatch(handler, data):
     """Dispatch call to handler."""
 
-    try:        
+    try:    
+        id = 0
         work_item = json.loads(data)
         id = work_item['id']
 
@@ -325,13 +326,13 @@ class Proxy(object):
             response = _read(self._conn)
             
             r = json.loads(response)
-            if r['id'] != id:
-                logging.error('Received unmatching id. sent=%s, received=%s.', id, r['id'])
-                raise ValueError(r['id'])
-
             if r.get('error', None) is not None:
                 logging.warning('Error returned by proxy, error=%s.', r['error'])
                 raise ServerError(r['error'])
+
+            if r['id'] != id:
+                logging.error('Received unmatching id. sent=%s, received=%s.', id, r['id'])
+                raise ValueError(r['id'])
 
             return r['result']
 

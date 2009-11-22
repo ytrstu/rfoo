@@ -45,6 +45,26 @@ else:
 
 
 
+class TestHandler(jpc.BaseHandler):
+    def __init__(self, *args, **kwargs):
+        jpc.BaseHandler(*args, **kwargs)
+
+        self._t = 0
+
+
+    def iterate(self, n):
+        """Iterate n times and return timings."""
+
+        t0 = time.time()
+        while n > 0:
+            n -= 1
+        t1 = time.time()
+        self._t += t1 - t0
+
+        return self._t, t1 - t0
+
+
+
 def print_usage():
     scriptName = os.path.basename(sys.argv[0])
     sys.stdout.write("""
@@ -54,6 +74,9 @@ Start server:
 Start client:
 %(name)s [-c] [-oHOST] [-pPORT] [-nN] [data]
 
+data, if present should be an integer value, which controls the
+length of a CPU intensive loop performed at the server.
+
 -h, --help  Print this help.
 -v          Debug output.
 -s          Start server.
@@ -62,6 +85,7 @@ Start client:
 -pPORT      Set PORT.
 -nN         Repeat client call N times.
 -tN         Number of client threads to use.
+-iF         Set thread switch interval in seconds (float).
 """ % {'name': scriptName})
 
 
@@ -72,7 +96,7 @@ def main():
     try:
         options, args = getopt.getopt(
             sys.argv[1:], 
-            'hvsco:p:n:t:', 
+            'hvsco:p:n:t:i:', 
             ['help']
             )
         options = dict(options)
@@ -96,6 +120,10 @@ def main():
         stream=sys.stderr
     )
     
+    if '-i' in options:
+        interval = float(options.get('-i'))
+        sys.setswitchinterval(interval)
+
     host = options.get('-o', '127.0.0.1')
     port = int(options.get('-p', jpc.DEFAULT_PORT))
 
@@ -103,15 +131,15 @@ def main():
     try:
         if '-s' in options:
             logging.warning('Start as server.')
-            jpc.start_server(host=host, port=port)
+            jpc.start_server(host=host, port=port, handler=TestHandler)
             return
             
         logging.warning('Start as client.')
 
         if len(args) > 0:
-            data = args[0]
+            data = int(args[0])
         else:
-            data = 'x' * 10000
+            data = 1000
 
         n = int(options.get('-n', 1))
         t = int(options.get('-t', 1))
@@ -121,15 +149,19 @@ def main():
             if '-c' in options:
                 for i in range(m):
                     connection = jpc.connect(host=host, port=port)
-                    r = jpc.Proxy(connection).echo_args(data)
+                    r = jpc.Proxy(connection).iterate(data)
                     logging.info('Received %r from proxy.', r)
                     connection.close()
 
             else:
                 connection = jpc.connect(host=host, port=port)
                 for i in range(m):
-                    r = jpc.Proxy(connection).echo_args(data)
+                    r = jpc.Proxy(connection).iterate(data)
                     logging.info('Received %r from proxy.', r)
+                    if i % 32 == 0:
+                        logging.warning('Received %r from proxy, iteration %d', r, i)
+
+            logging.warning('Received %r from proxy.', r)
 
         if t == 1:
             client()

@@ -63,7 +63,7 @@ except ImportError:
 
 
 
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 #
 # Bind to loopback to restrict server to local requests.
@@ -88,60 +88,6 @@ class EofError(Exception):
 
 
 
-def is_unicode(s):
-    """Test if string is unicode."""
-
-    if ISPY3K:
-        return type(s) == str
-
-    return type(s) == unicode
-
-
-
-def as_bytes(s, encoding = 'utf-8', fstrict = True):
-    """Encode unicode string into bytes."""
-
-    if not is_unicode(s):
-        return s
-
-    if fstrict:
-        b = s.encode(encoding)
-    else:
-        b = s.encode(encoding, 'replace')
-
-    return b
-
-
-
-def as_string(s, encoding = 'utf-8', fstrict = False):
-    """Decode or encode (unicode) string to str type."""
-
-    #
-    # On Python 3.x str type is unicode.
-    #
-    if ISPY3K:
-        if is_unicode(s):
-            return s
-
-        if fstrict:
-            e = s.decode(encoding)
-        else:
-            e = s.decode(encoding, 'replace')
-
-        return e
-
-    if not is_unicode(s):
-        return s
-
-    if fstrict:
-        e = s.encode(encoding)
-    else:
-        e = s.encode(encoding, 'replace')
-
-    return e
-
-
-
 class BaseHandler(object):
     """
     Handle incomming requests.
@@ -156,7 +102,7 @@ class BaseHandler(object):
 class EchoHandler(BaseHandler):
     """Echo back call arguments for debugging."""
 
-    def echo_args(self, *args, **kwargs):
+    def echo(self, *args, **kwargs):
         return repr({'*args': args, '**kwargs': kwargs})
 
 
@@ -201,6 +147,8 @@ def _serve_connection(conn, addr, handler_factory):
 
     logging.info('Enter, addr=%s.', addr)
 
+    c = Connection(conn)
+
     try:
         #
         # Instantiate handler for the lifetime of the connection,
@@ -210,15 +158,23 @@ def _serve_connection(conn, addr, handler_factory):
 
         try:
             while True:
-                data = _read(conn)
+                data = c.read()
+                
+                if ISPY3K:
+                    data = data.decode('utf-8')
+                
                 response = _dispatch(handler, data)
-                _write(conn, response)
+                
+                if ISPY3K:
+                    response = response.encode('utf-8')
+                
+                c.write(response)
 
         except EofError:
             logging.debug('Caught end of file.')
 
     finally:
-        conn.close()
+        c.close()
 
 
 
@@ -292,7 +248,8 @@ def connect(host=LOOPBACK, port=DEFAULT_PORT):
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
-    return s
+
+    return Connection(s)
 
 
 
@@ -321,10 +278,16 @@ class Proxy(object):
                 'kwargs': kwargs,
                 'id': id,
             })
-
-            _write(self._conn, data)
-            response = _read(self._conn)
             
+            if ISPY3K:
+                data = data.encode('utf-8')
+
+            self._conn.write(data)
+            response = self._conn.read()
+           
+            if ISPY3K:
+                response = response.decode('utf-8')
+
             r = json.loads(response)
             if r.get('error', None) is not None:
                 logging.warning('Error returned by proxy, error=%s.', r['error'])
@@ -340,35 +303,49 @@ class Proxy(object):
 
 
 
-def _write(conn, data):
-    """Write length prefixed data to socket."""
+class Connection(object):
+    """Wrap socket with buffered read and length prefix for data."""
 
-    logging.debug('Enter, data=%.512s...', data)
+    def __init__(self, conn):
+        self._conn = conn
+        self._buffer = ''
+        
+        if ISPY3K:
+            self._buffer = self._buffer.encode('utf-8')
 
-    bytes_ = as_bytes(data)
-    length = len(bytes_)
-    conn.sendall(as_bytes('%08x' % length) + bytes_)
+
+    def close(self):
+        self._conn.close()
 
 
+    def write(self, data):
+        """Write length prefixed data to socket."""
 
-def _read(conn, length=None, debug=True):
-    """Read length prefixed data from socket."""
+        length = len(data)
+        l = '%08x' % length
+        if ISPY3K:
+            l = l.encode('utf-8')
 
-    if length is None:
-        length = int(_read(conn, 8, False), 16)
+        self._conn.sendall(l + data)
 
-    data = as_bytes('')
-    while len(data) < length:
-        buffer_size = min(length, BUFFER_SIZE)
-        buffer = conn.recv(buffer_size)
-        if not buffer:
-            raise EofError()
-        data += buffer
 
-    if debug:
-        logging.debug('Return data=%.512s.', data)
+    def read(self):
+        """Read length prefixed data from socket."""
 
-    return as_string(data)
+        length = int(self._read(8), 16)
+        return self._read(length)
+
+   
+    def _read(self, length):
+        buffer = self._buffer
+        while len(buffer) < length:
+            data = self._conn.recv(BUFFER_SIZE)
+            if not data:
+                raise EofError()
+            buffer += data
+
+        self._buffer = buffer[length:]
+        return buffer[: length]
 
 
 

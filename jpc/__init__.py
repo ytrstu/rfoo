@@ -63,7 +63,7 @@ except ImportError:
 
 
 
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 #
 # Bind to loopback to restrict server to local requests.
@@ -94,8 +94,34 @@ class BaseHandler(object):
     Client can call public methods of derived classes.
     """
 
-    def __init__(self, addr):
+    def __init__(self, addr=None):
         self._addr = addr
+        self._methods = {}
+
+
+    def _close(self):
+        self._methods = {}
+
+
+    def _get_method(self, name):
+        """Get public handler method."""
+
+        m = self._methods.get(name, None)
+        if m is not None:
+            return m
+
+        if name.startswith('_'):
+            logging.warning('Attempt to get non-public, attribute=%s.', name)
+            raise ValueError(name)
+
+        m = getattr(self, name)
+        if not inspect.ismethod(m):
+            logging.warning('Attempt to get non-method, attribute=%s.', name)
+            raise ValueError(name)
+
+        self._methods[name] = m
+
+        return m
 
 
 
@@ -103,7 +129,7 @@ class EchoHandler(BaseHandler):
     """Echo back call arguments for debugging."""
 
     def echo(self, *args, **kwargs):
-        return repr({'*args': args, '**kwargs': kwargs})
+        return {'*args': args, '**kwargs': kwargs}
 
 
 
@@ -175,6 +201,7 @@ def _serve_connection(conn, addr, handler_factory):
 
     finally:
         c.close()
+        handler._close()
 
 
 
@@ -190,27 +217,19 @@ def _dispatch(handler, data):
         work_item = json.loads(data)
         id = work_item['id']
 
-        #
-        # Validate method.
-        #
-        method = work_item['method']
-        if method.startswith('_'):
-            logging.warning('Attempt to call non-public, attribute=%s.', method)
-            raise ValueError(method)
+        name = work_item['method']
+        foo = handler._get_method(name)
 
-        f = getattr(handler, method)
-        if not inspect.ismethod(f):
-            logging.warning('Attempt to call non-method, attribute=%s.', method)
-            raise ValueError(method)
+        args = work_item['params']
+        kwargs = work_item.get('kwargs', {})
 
         #
         # Convert kwargs keys from unicode to strings.
         #
-        kwargs = work_item.get('kwargs', {})
-        kwargs = dict((str(k), v) for k, v in kwargs.items())
-        args = work_item.get('params', ())
+        if not ISPY3K and len(kwargs) > 0:
+            kwargs = dict((str(k), v) for k, v in kwargs.items())
 
-        result = f(*args, **kwargs)
+        result = foo(*args, **kwargs)
         return json.dumps({'result': result, 'error': None, 'id': id})
 
     except Exception:
@@ -270,15 +289,18 @@ class Proxy(object):
 
         def proxy(*args, **kwargs):
             """Call method on server."""
-            
-            id = '%08x' % random.randint(0, 2 << 32)
-            data = json.dumps({
+           
+            d = {
                 'method': name,
                 'params': args,
-                'kwargs': kwargs,
-                'id': id,
-            })
+                'id': 0,
+            }
+
+            if len(kwargs) > 0:
+                d['kwargs'] = kargs
             
+            data = json.dumps(d)
+
             if ISPY3K:
                 data = data.encode('utf-8')
 
@@ -293,13 +315,36 @@ class Proxy(object):
                 logging.warning('Error returned by proxy, error=%s.', r['error'])
                 raise ServerError(r['error'])
 
-            if r['id'] != id:
-                logging.error('Received unmatching id. sent=%s, received=%s.', id, r['id'])
+            if r['id'] != 0:
+                logging.error('Received unmatching id, %s.', r['id'])
                 raise ValueError(r['id'])
 
             return r['result']
 
         return proxy
+
+
+
+class Shortcut(object):
+    """Dispatch without network, for debugging."""
+
+    def __init__(self, handler):
+        self._handler = handler
+        self._response = None
+
+
+    def write(self, data):
+        if ISPY3K:
+            data = data.decode('utf-8')
+        
+        self._response = _dispatch(self._handler, data)
+        
+        if ISPY3K:
+            self._response = self._response.encode('utf-8')        
+
+
+    def read(self):
+        return self._response
 
 
 

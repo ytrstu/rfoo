@@ -47,7 +47,7 @@ else:
 
 class TestHandler(jpc.BaseHandler):
     def __init__(self, *args, **kwargs):
-        jpc.BaseHandler(*args, **kwargs)
+        jpc.BaseHandler.__init__(self, *args, **kwargs)
 
         self._t = 0
 
@@ -96,7 +96,7 @@ def main():
     try:
         options, args = getopt.getopt(
             sys.argv[1:], 
-            'hvsco:p:n:t:i:', 
+            'hvscuo:p:n:t:i:', 
             ['help']
             )
         options = dict(options)
@@ -150,16 +150,26 @@ def main():
                 for i in range(m):
                     connection = jpc.connect(host=host, port=port)
                     r = jpc.Proxy(connection).iterate(data)
-                    logging.info('Received %r from proxy.', r)
+                    if level == logging.DEBUG:
+                        logging.debug('Received %r from proxy.', r)
                     connection.close()
+
+            elif '-u' in options:
+                handler = TestHandler()
+                shortcut = jpc.Shortcut(handler)
+                iterate = jpc.Proxy(shortcut).iterate
+                for i in range(m):
+                    r = iterate(data)
+                    if level == logging.DEBUG:
+                        logging.debug('Received %r from proxy.', r)
 
             else:
                 connection = jpc.connect(host=host, port=port)
+                iterate = jpc.Proxy(connection).iterate
                 for i in range(m):
-                    r = jpc.Proxy(connection).iterate(data)
-                    logging.info('Received %r from proxy.', r)
-                    if i % 32 == 0:
-                        logging.warning('Received %r from proxy, iteration %d', r, i)
+                    r = iterate(data)
+                    if level == logging.DEBUG:
+                        logging.debug('Received %r from proxy.', r)
 
             logging.warning('Received %r from proxy.', r)
 

@@ -1,0 +1,26 @@
+
+jpc - Fast JSON RPC server.
+
+Contact: Nir Aides
+Email:   nir@winpdb.org
+Website: http://www.winpdb.org/
+Version: 1.0.6
+
+
+Requirements
+
+    Depends on simplejson on Python versions earlier than 2.6. Use 
+    simplejson > 2.0 for best performance.
+
+    Tested on GNU/Linux:
+     RHEL 5.3 64bit, Python 2.4, 2.6
+     Ubuntu 8.10 64bit, Python 2.5, 3.2
+
+	
+Installation
+
+    Enter the distribution folder and type the following in a console:
+     sudo python setup.py install
+
+
+

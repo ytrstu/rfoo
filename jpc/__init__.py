@@ -38,18 +38,16 @@
 
 
 
+import threading
 import logging
 import inspect
-import random
 import socket
 import sys
 
 try:
     import thread
-    import Queue
 except:
     import _thread as thread
-    import queue as Queue
 
 try:
     #
@@ -63,16 +61,16 @@ except ImportError:
 
 
 
-__version__ = '1.0.5'
+__version__ = '1.0.6'
 
 #
-# Bind to loopback to restrict server to local requests.
+# Bind to loopback to restrict server to local requests, by default.
 #
 LOOPBACK = '127.0.0.1'
 DEFAULT_PORT = 52431
 BUFFER_SIZE = 4096
 
-MAX_THREADS = 256
+MAX_THREADS = 128
 
 ISPY3K = sys.version_info[0] >= 3
 
@@ -104,7 +102,10 @@ class BaseHandler(object):
 
 
     def _get_method(self, name):
-        """Get public handler method."""
+        """
+        Get public method.
+        Verify attribute is public method and use cache for performance.
+        """
 
         m = self._methods.get(name, None)
         if m is not None:
@@ -145,7 +146,7 @@ class ExampleHandler(BaseHandler):
 
 
 
-g_queue = Queue.Queue(MAX_THREADS)
+g_threads_semaphore = threading.Semaphore(MAX_THREADS)
 
 def threaded(foo):
     """Run foo using bounded number of threads."""
@@ -154,10 +155,10 @@ def threaded(foo):
         try:
             foo(*args, **kwargs)
         finally:
-            g_queue.get_nowait()
+            g_threads_semaphore.release()
 
     def wrapper2(*args, **kwargs):
-        g_queue.put(1, block=True)
+        g_threads_semaphore.acquire()
         thread.start_new_thread(wrapper1, args, kwargs)
 
     return wrapper2
@@ -190,6 +191,8 @@ def _serve_connection(conn, addr, handler_factory):
                     data = data.decode('utf-8')
                 
                 response = _dispatch(handler, data)
+                if response is None:
+                    continue
                 
                 if ISPY3K:
                     response = response.encode('utf-8')
@@ -197,9 +200,10 @@ def _serve_connection(conn, addr, handler_factory):
                 c.write(response)
 
         except EofError:
-            logging.debug('Caught end of file.')
+            logging.debug('Caught end of file, error=%r.', sys.exc_info()[1])
 
     finally:
+        c.shutdown(socket.SHUT_RDWR)
         c.close()
         handler._close()
 
@@ -210,12 +214,15 @@ threaded_connection = threaded(_serve_connection)
 
 
 def _dispatch(handler, data):
-    """Dispatch call to handler."""
+    """
+    Dispatch call to handler.
+    Notifications arrive with no ID and get no response.
+    """
 
     try:    
-        id = 0
+        id = None
         work_item = json.loads(data)
-        id = work_item['id']
+        id = work_item.get('id', None)
 
         name = work_item['method']
         foo = handler._get_method(name)
@@ -230,11 +237,13 @@ def _dispatch(handler, data):
             kwargs = dict((str(k), v) for k, v in kwargs.items())
 
         result = foo(*args, **kwargs)
-        return json.dumps({'result': result, 'error': None, 'id': id})
+        if id is not None:
+            return json.dumps({'result': result, 'error': None, 'id': id})
 
     except Exception:
         logging.warning('Caught exception raised by callable.', exc_info=True)
-        return json.dumps({'result': None, 'error': repr(sys.exc_info()[1]), 'id': id})
+        if id is not None:
+            return json.dumps({'result': None, 'error': repr(sys.exc_info()[1]), 'id': id})
 
 
 
@@ -248,7 +257,7 @@ def start_server(host=LOOPBACK, port=DEFAULT_PORT, on_accept=threaded_connection
 
     try:
         s.bind((host, port))
-        s.listen(1)
+        s.listen(5)
 
         while True:
             conn, addr = s.accept()
@@ -256,6 +265,7 @@ def start_server(host=LOOPBACK, port=DEFAULT_PORT, on_accept=threaded_connection
             on_accept(conn, addr, handler)
 
     finally:
+        s.shutdown(socket.SHUT_RDWR)
         s.close()
 
 
@@ -282,69 +292,81 @@ class Proxy(object):
 
     def __init__(self, conn):
         self._conn = conn
+        self._id = 1
+
+
+    def _proxy(self, async, name, args, kwargs):
+        """
+        Call method on server.
+        Asynchhronous calls omit ID and do not wait for response.
+        """
+       
+        d = {
+            'method': name,
+            'params': args,
+        }
+
+        if not async:
+            d['id'] = self._id
+            self._id += 1
+
+        if len(kwargs) > 0:
+            d['kwargs'] = kargs
+        
+        data = json.dumps(d)
+
+        if ISPY3K:
+            data = data.encode('utf-8')
+
+        self._conn.write(data)
+
+        if async:
+            return
+
+        response = self._conn.read()
+       
+        if ISPY3K:
+            response = response.decode('utf-8')
+
+        r = json.loads(response)
+        if r.get('error', None) is not None:
+            logging.warning('Error returned by proxy, error=%s.', r['error'])
+            raise ServerError(r['error'])
+
+        if r['id'] != d['id']:
+            logging.error('Received unmatching id, sent=%s, received=%s.', d['id'], r['id'])
+            raise ValueError(r['id'])
+
+        return r['result']
 
 
     def __getattr__(self, name):
         """Return proxy version of method."""
 
         def proxy(*args, **kwargs):
-            """Call method on server."""
-           
-            d = {
-                'method': name,
-                'params': args,
-                'id': 0,
-            }
-
-            if len(kwargs) > 0:
-                d['kwargs'] = kargs
-            
-            data = json.dumps(d)
-
-            if ISPY3K:
-                data = data.encode('utf-8')
-
-            self._conn.write(data)
-            response = self._conn.read()
-           
-            if ISPY3K:
-                response = response.decode('utf-8')
-
-            r = json.loads(response)
-            if r.get('error', None) is not None:
-                logging.warning('Error returned by proxy, error=%s.', r['error'])
-                raise ServerError(r['error'])
-
-            if r['id'] != 0:
-                logging.error('Received unmatching id, %s.', r['id'])
-                raise ValueError(r['id'])
-
-            return r['result']
+            """Call method on server synchronously."""
+            return self._proxy(False, name, args, kwargs)
 
         return proxy
 
 
 
-class Shortcut(object):
-    """Dispatch without network, for debugging."""
-
-    def __init__(self, handler):
-        self._handler = handler
-        self._response = None
-
-
-    def write(self, data):
-        if ISPY3K:
-            data = data.decode('utf-8')
-        
-        self._response = _dispatch(self._handler, data)
-        
-        if ISPY3K:
-            self._response = self._response.encode('utf-8')        
+class Notifier(Proxy):
+    """
+    Proxy methods of server handler, asynchronously.
+    Call Notifier(connection).foo(*args, **kwargs) to invoke method
+    handler.foo(*args, **kwargs) of server handler.
+    """
 
 
-    def read(self):
-        return self._response
+    def __getattr__(self, name):
+        """Return async proxy version of method."""
+
+        def proxy(*args, **kwargs):
+            """Call method on server asynchronously."""
+            return self._proxy(True, name, args, kwargs)
+
+        return proxy
 
 
 
@@ -359,8 +381,10 @@ class Connection(object):
             self._buffer = self._buffer.encode('utf-8')
 
 
-    def close(self):
-        self._conn.close()
+    def __getattr__(self, name):
+        """Delegate attributes of socket."""
+
+        return getattr(self._conn, name)
 
 
     def write(self, data):
@@ -386,7 +410,7 @@ class Connection(object):
         while len(buffer) < length:
             data = self._conn.recv(BUFFER_SIZE)
             if not data:
-                raise EofError()
+                raise EofError(len(buffer))
             buffer += data
 
         self._buffer = buffer[length:]

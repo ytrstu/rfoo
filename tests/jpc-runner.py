@@ -27,6 +27,7 @@
 
 import threading
 import logging
+import socket
 import getopt
 import time
 import jpc
@@ -52,16 +53,45 @@ class TestHandler(jpc.BaseHandler):
         self._t = 0
 
 
-    def iterate(self, n):
+    def iterate(self, n, verbose=False):
         """Iterate n times and return timings."""
 
+        n0 = n
         t0 = time.time()
+
         while n > 0:
             n -= 1
+
         t1 = time.time()
         self._t += t1 - t0
 
+        if verbose:
+            logging.warning('Ran %d iterations in %f seconds.', n0, t1 - t0)
+
         return self._t, t1 - t0
+
+    
+
+class Shortcut(object):
+    """Dispatch without network, for debugging."""
+
+    def __init__(self, handler):
+        self._handler = handler
+        self._response = None
+
+
+    def write(self, data):
+        if ISPY3K:
+            data = data.decode('utf-8')
+        
+        self._response = _dispatch(self._handler, data)
+        
+        if ISPY3K and self._response is not None:
+            self._response = self._response.encode('utf-8')        
+
+
+    def read(self):
+        return self._response
 
 
 
@@ -80,6 +110,7 @@ length of a CPU intensive loop performed at the server.
 -h, --help  Print this help.
 -v          Debug output.
 -s          Start server.
+-a          Use async notifications instead of synchronous calls.
 -c          Setup and tear down connection with each iteration.
 -oHOST      Set HOST.
 -pPORT      Set PORT.
@@ -96,7 +127,7 @@ def main():
     try:
         options, args = getopt.getopt(
             sys.argv[1:], 
-            'hvscuo:p:n:t:i:', 
+            'hvsacuo:p:n:t:i:', 
             ['help']
             )
         options = dict(options)
@@ -109,10 +140,21 @@ def main():
         print_usage()
         return
 
+    #
+    # Prevent timing single connection async calls since 
+    # this combination will simply generate a SYN attack,
+    # and is not a practical use case.
+    #
+    if '-a' in options and '-c' in options:
+        print_usage()
+        return
+
     if '-v' in options:
         level = logging.DEBUG
+        verbose = True
     else:
         level = logging.WARNING
+        verbose = False
 
     logging.basicConfig(
         level=level, 
@@ -145,29 +187,44 @@ def main():
         t = int(options.get('-t', 1))
         m = int(n / t)
 
+        if '-a' in options:
+            gate = jpc.Notifier
+        else:
+            gate = jpc.Proxy
+
         def client():
+            #
+            # Time connection setup/teardown.
+            #
             if '-c' in options:
                 for i in range(m):
                     connection = jpc.connect(host=host, port=port)
-                    r = jpc.Proxy(connection).iterate(data)
+                    r = jpc.Proxy(connection).iterate(data, verbose)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
+                    connection.shutdown(socket.SHUT_RDWR)
                     connection.close()
 
+            #
+            # Time shortcut connection (no network).
+            #
             elif '-u' in options:
                 handler = TestHandler()
                 shortcut = jpc.Shortcut(handler)
-                iterate = jpc.Proxy(shortcut).iterate
+                iterate = gate(shortcut).iterate
                 for i in range(m):
-                    r = iterate(data)
+                    r = iterate(data, verbose)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
 
+            #
+            # Time calls synched / asynch (notifications).
+            #
             else:
                 connection = jpc.connect(host=host, port=port)
-                iterate = jpc.Proxy(connection).iterate
+                iterate = gate(connection).iterate
                 for i in range(m):
-                    r = iterate(data)
+                    r = iterate(data, verbose)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
 

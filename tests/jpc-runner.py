@@ -27,7 +27,6 @@
 
 import threading
 import logging
-import socket
 import getopt
 import time
 import jpc
@@ -43,6 +42,10 @@ if logging.__version__[:3] >= '0.5':
     LOGGING_FORMAT = '[%(process)d:%(thread).5s] %(asctime)s %(levelname)s %(module)s:%(lineno)d %(funcName)s() - %(message)s'
 else:
     LOGGING_FORMAT = '[%(process)d:%(thread).5s] %(asctime)s %(levelname)s %(module)s:%(lineno)d - %(message)s'
+
+
+
+ISPY3K = sys.version_info[0] >= 3
 
 
 
@@ -84,7 +87,7 @@ class Shortcut(object):
         if ISPY3K:
             data = data.decode('utf-8')
         
-        self._response = _dispatch(self._handler, data)
+        self._response = jpc._dispatch(self._handler, data)
         
         if ISPY3K and self._response is not None:
             self._response = self._response.encode('utf-8')        
@@ -142,7 +145,7 @@ def main():
 
     #
     # Prevent timing single connection async calls since 
-    # this combination will simply generate a SYN attack,
+    # this combination will simply generate a SYN flood,
     # and is not a practical use case.
     #
     if '-a' in options and '-c' in options:
@@ -202,7 +205,6 @@ def main():
                     r = jpc.Proxy(connection).iterate(data, verbose)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
-                    connection.shutdown(socket.SHUT_RDWR)
                     connection.close()
 
             #
@@ -210,7 +212,7 @@ def main():
             #
             elif '-u' in options:
                 handler = TestHandler()
-                shortcut = jpc.Shortcut(handler)
+                shortcut = Shortcut(handler)
                 iterate = gate(shortcut).iterate
                 for i in range(m):
                     r = iterate(data, verbose)

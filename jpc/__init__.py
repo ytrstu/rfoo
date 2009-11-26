@@ -203,7 +203,6 @@ def _serve_connection(conn, addr, handler_factory):
             logging.debug('Caught end of file, error=%r.', sys.exc_info()[1])
 
     finally:
-        c.shutdown(socket.SHUT_RDWR)
         c.close()
         handler._close()
 
@@ -386,6 +385,13 @@ class Connection(object):
 
         return getattr(self._conn, name)
 
+
+    def close(self):
+        """Shut down and close socket."""
+
+        self._conn.shutdown(socket.SHUT_RDWR)
+        self._conn.close()
+        
 
     def write(self, data):
         """Write length prefixed data to socket."""

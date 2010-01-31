@@ -1,5 +1,5 @@
 """
-    jpc/jpc.py
+    jpc/_jpc.py
 
     Fast RPC server, partially compliant with JSON-RPC version 1:
     http://json-rpc.org/wiki/specification
@@ -317,12 +317,15 @@ class Proxy(object):
         if ISPY3K:
             data = data.encode('utf-8')
 
-        self._conn.write(data)
+        self._conn.acquire()
+        try:
+            self._conn.write(data)
+            if async:
+                return
 
-        if async:
-            return
-
-        response = self._conn.read()
+            response = self._conn.read()
+        finally:
+            self._conn.release()
        
         if ISPY3K:
             response = response.decode('utf-8')
@@ -385,6 +388,13 @@ class Connection(object):
 
         return getattr(self._conn, name)
 
+    def acquire(self):
+        """Override to provide locking."""
+        pass
+
+    def release(self):
+        """Override to provide locking."""
+        pass
 
     def close(self):
         """Shut down and close socket."""

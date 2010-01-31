@@ -28,7 +28,7 @@ from distutils.core import setup
 
 setup(
     name = 'jpc',
-    version = '1.0.6',
+    version = '1.0.7',
     description = 'Fast JSON-RPC client/server module.',
     author = 'Nir Aides',
     author_email = 'nir@winpdb.org',

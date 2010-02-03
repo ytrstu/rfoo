@@ -146,6 +146,69 @@ class ExampleHandler(BaseHandler):
 
 
 
+class Connection(object):
+    """Wrap socket with buffered read and length prefix for data."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._buffer = ''
+        
+        if ISPY3K:
+            self._buffer = self._buffer.encode('utf-8')
+
+
+    def __getattr__(self, name):
+        """Delegate attributes of socket."""
+
+        return getattr(self._conn, name)
+
+
+    def acquire(self):
+        """Override to provide locking."""
+
+
+    def release(self):
+        """Override to provide locking."""
+
+
+    def close(self):
+        """Shut down and close socket."""
+
+        self._conn.shutdown(socket.SHUT_RDWR)
+        self._conn.close()
+        
+
+    def write(self, data):
+        """Write length prefixed data to socket."""
+
+        length = len(data)
+        l = '%08x' % length
+        if ISPY3K:
+            l = l.encode('utf-8')
+
+        self._conn.sendall(l + data)
+
+
+    def read(self):
+        """Read length prefixed data from socket."""
+
+        length = int(self._read(8), 16)
+        return self._read(length)
+
+   
+    def _read(self, length):
+        buffer = self._buffer
+        while len(buffer) < length:
+            data = self._conn.recv(BUFFER_SIZE)
+            if not data:
+                raise EofError(len(buffer))
+            buffer += data
+
+        self._buffer = buffer[length:]
+        return buffer[: length]
+
+
+
 g_threads_semaphore = threading.Semaphore(MAX_THREADS)
 
 def threaded(foo):
@@ -269,7 +332,7 @@ def start_server(host=LOOPBACK, port=DEFAULT_PORT, on_accept=threaded_connection
 
 
 
-def connect(host=LOOPBACK, port=DEFAULT_PORT):
+def connect(host=LOOPBACK, port=DEFAULT_PORT, connection_type=Connection):
     """Connect to server."""
 
     logging.info('Enter, host=%s, port=%d.', host, port)
@@ -277,7 +340,7 @@ def connect(host=LOOPBACK, port=DEFAULT_PORT):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
 
-    return Connection(s)
+    return connection_type(s)
 
 
 
@@ -369,68 +432,6 @@ class Notifier(Proxy):
             return self._proxy(True, name, args, kwargs)
 
         return proxy
-
-
-
-class Connection(object):
-    """Wrap socket with buffered read and length prefix for data."""
-
-    def __init__(self, conn):
-        self._conn = conn
-        self._buffer = ''
-        
-        if ISPY3K:
-            self._buffer = self._buffer.encode('utf-8')
-
-
-    def __getattr__(self, name):
-        """Delegate attributes of socket."""
-
-        return getattr(self._conn, name)
-
-    def acquire(self):
-        """Override to provide locking."""
-        pass
-
-    def release(self):
-        """Override to provide locking."""
-        pass
-
-    def close(self):
-        """Shut down and close socket."""
-
-        self._conn.shutdown(socket.SHUT_RDWR)
-        self._conn.close()
-        
-
-    def write(self, data):
-        """Write length prefixed data to socket."""
-
-        length = len(data)
-        l = '%08x' % length
-        if ISPY3K:
-            l = l.encode('utf-8')
-
-        self._conn.sendall(l + data)
-
-
-    def read(self):
-        """Read length prefixed data from socket."""
-
-        length = int(self._read(8), 16)
-        return self._read(length)
-
-   
-    def _read(self, length):
-        buffer = self._buffer
-        while len(buffer) < length:
-            data = self._conn.recv(BUFFER_SIZE)
-            if not data:
-                raise EofError(len(buffer))
-            buffer += data
-
-        self._buffer = buffer[length:]
-        return buffer[: length]
 
 
 

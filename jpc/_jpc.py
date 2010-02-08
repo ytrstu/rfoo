@@ -174,7 +174,11 @@ class Connection(object):
     def close(self):
         """Shut down and close socket."""
 
-        self._conn.shutdown(socket.SHUT_RDWR)
+        try:
+            self._conn.shutdown(socket.SHUT_RDWR)
+        except socket.error:
+            pass
+
         self._conn.close()
         
 

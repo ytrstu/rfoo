@@ -163,14 +163,6 @@ class Connection(object):
         return getattr(self._conn, name)
 
 
-    def acquire(self):
-        """Override to provide locking."""
-
-
-    def release(self):
-        """Override to provide locking."""
-
-
     def close(self):
         """Shut down and close socket."""
 
@@ -384,16 +376,12 @@ class Proxy(object):
         if ISPY3K:
             data = data.encode('utf-8')
 
-        self._conn.acquire()
-        try:
-            self._conn.write(data)
-            if async:
-                return
+        self._conn.write(data)
+        if async:
+            return
 
-            response = self._conn.read()
-        finally:
-            self._conn.release()
-       
+        response = self._conn.read()
+   
         if ISPY3K:
             response = response.decode('utf-8')
 

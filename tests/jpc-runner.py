@@ -184,7 +184,7 @@ def main():
         if len(args) > 0:
             data = int(args[0])
         else:
-            data = 1000
+            data = 1
 
         n = int(options.get('-n', 1))
         t = int(options.get('-t', 1))

@@ -28,7 +28,7 @@ from distutils.core import setup
 
 setup(
     name = 'rfoo',
-    version = '1.0.7',
+    version = '1.0.8',
     description = 'Fast RPC client/server module.',
     author = 'Nir Aides',
     author_email = 'nir@winpdb.org',

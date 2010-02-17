@@ -1,9 +1,9 @@
 """
     setup.py
 
-    Setup script for jpc
+    Setup script for rfoo
 
-    Copyright (C) 2009 Nir Aides
+    Copyright (C) 2010 Nir Aides
 
     This program is free software; you can redistribute it and/or modify it 
     under the terms of the GNU General Public License as published by the 
@@ -27,14 +27,14 @@ from distutils.core import setup
 
 
 setup(
-    name = 'jpc',
+    name = 'rfoo',
     version = '1.0.7',
-    description = 'Fast JSON-RPC client/server module.',
+    description = 'Fast RPC client/server module.',
     author = 'Nir Aides',
     author_email = 'nir@winpdb.org',
     url = 'http://www.winpdb.org/',
     license = 'GNU GPL',
-    packages = ['jpc']
+    packages = ['rfoo']
 )
 
 

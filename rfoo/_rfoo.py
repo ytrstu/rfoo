@@ -310,7 +310,7 @@ def connect(host=LOOPBACK, port=DEFAULT_PORT, connection_type=Connection):
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
-    s.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 0)
+    #s.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 0)
 
     return connection_type(s)
 

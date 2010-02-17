@@ -1,12 +1,11 @@
 #! /usr/bin/env python
 
 """
-    tests/jpc-runner.py
+    tests/rfoo-runner.py
 
-    Fast RPC server, partially compliant with JSON-RPC version 1:
-    http://json-rpc.org/wiki/specification
+    Fast RPC server.
 
-    Copyright (C) 2009 Nir Aides <nir@winpdb.org>
+    Copyright (C) 2010 Nir Aides <nir@winpdb.org>
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License
@@ -29,7 +28,7 @@ import threading
 import logging
 import getopt
 import time
-import jpc
+import rfoo
 import sys
 import os
 
@@ -49,15 +48,17 @@ ISPY3K = sys.version_info[0] >= 3
 
 
 
-class TestHandler(jpc.BaseHandler):
+class TestHandler(rfoo.BaseHandler):
     def __init__(self, *args, **kwargs):
-        jpc.BaseHandler.__init__(self, *args, **kwargs)
+        rfoo.BaseHandler.__init__(self, *args, **kwargs)
 
         self._t = 0
 
 
     def iterate(self, n, verbose=False):
         """Iterate n times and return timings."""
+
+        return 1, 1
 
         n0 = n
         t0 = time.time()
@@ -75,26 +76,38 @@ class TestHandler(jpc.BaseHandler):
 
     
 
-class Shortcut(object):
+class DummySocket(object):
+    def __init__(self, handler, conn):
+        self._handler = handler
+        self._conn = conn
+        self._buffer = ''
+        self._counter = 0
+
+    def shutdown(self, x):
+        pass
+
+    def close(self):
+        pass
+
+    def sendall(self, data):
+        self._buffer = data
+
+        self._counter += 1
+        if self._counter % 2 == 1:
+            rfoo._rfoo._dispatch(self._handler, self._conn)
+
+    def recv(self, size):
+        data = self._buffer[:size]
+        self._buffer = self._buffer[size:]
+        return data
+
+
+
+class DummyConnection(rfoo.Connection):
     """Dispatch without network, for debugging."""
 
     def __init__(self, handler):
-        self._handler = handler
-        self._response = None
-
-
-    def write(self, data):
-        if ISPY3K:
-            data = data.decode('utf-8')
-        
-        self._response = jpc._dispatch(self._handler, data)
-        
-        if ISPY3K and self._response is not None:
-            self._response = self._response.encode('utf-8')        
-
-
-    def read(self):
-        return self._response
+        rfoo.Connection.__init__(self, DummySocket(handler, self))
 
 
 
@@ -170,13 +183,13 @@ def main():
         sys.setswitchinterval(interval)
 
     host = options.get('-o', '127.0.0.1')
-    port = int(options.get('-p', jpc.DEFAULT_PORT))
+    port = int(options.get('-p', rfoo.DEFAULT_PORT))
 
     t0 = time.time()
     try:
         if '-s' in options:
             logging.warning('Start as server.')
-            jpc.start_server(host=host, port=port, handler=TestHandler)
+            rfoo.start_server(host=host, port=port, handler=TestHandler)
             return
             
         logging.warning('Start as client.')
@@ -191,9 +204,9 @@ def main():
         m = int(n / t)
 
         if '-a' in options:
-            gate = jpc.Notifier
+            gate = rfoo.Notifier
         else:
-            gate = jpc.Proxy
+            gate = rfoo.Proxy
 
         def client():
             #
@@ -201,19 +214,19 @@ def main():
             #
             if '-c' in options:
                 for i in range(m):
-                    connection = jpc.connect(host=host, port=port)
-                    r = jpc.Proxy(connection).iterate(data, verbose)
+                    connection = rfoo.connect(host=host, port=port)
+                    r = rfoo.Proxy(connection).iterate(data, verbose)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
                     connection.close()
 
             #
-            # Time shortcut connection (no network).
+            # Time with dummy connection (no network).
             #
             elif '-u' in options:
                 handler = TestHandler()
-                shortcut = Shortcut(handler)
-                iterate = gate(shortcut).iterate
+                dummy = DummyConnection(handler)
+                iterate = gate(dummy).iterate
                 for i in range(m):
                     r = iterate(data, verbose)
                     if level == logging.DEBUG:
@@ -223,7 +236,7 @@ def main():
             # Time calls synched / asynch (notifications).
             #
             else:
-                connection = jpc.connect(host=host, port=port)
+                connection = rfoo.connect(host=host, port=port)
                 iterate = gate(connection).iterate
                 for i in range(m):
                     r = iterate(data, verbose)
@@ -251,7 +264,10 @@ def main():
 
     
 if __name__ == '__main__':
+    #import cProfile; 
+    #cProfile.run('main()', '/tmp/profiled');
     main()
+
 
 
 

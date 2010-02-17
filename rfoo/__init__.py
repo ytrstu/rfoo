@@ -1,10 +1,9 @@
 """
-    jpc/__init__.py
+    rfoo/__init__.py
 
-    Fast RPC server, partially compliant with JSON-RPC version 1:
-    http://json-rpc.org/wiki/specification
+    Fast RPC server.
 
-    Copyright (C) 2009 Nir Aides <nir@winpdb.org>
+    Copyright (C) 2010 Nir Aides <nir@winpdb.org>
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License
@@ -38,7 +37,7 @@
 
 
 
-from _jpc import *
+from _rfoo import *
 
 
 

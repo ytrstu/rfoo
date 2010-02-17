@@ -1,10 +1,9 @@
 """
-    jpc/_jpc.py
+    rfoo/_rfoo.py
 
-    Fast RPC server, partially compliant with JSON-RPC version 1:
-    http://json-rpc.org/wiki/specification
+    Fast RPC server.
 
-    Copyright (C) 2009 Nir Aides <nir@winpdb.org>
+    Copyright (C) 2010 Nir Aides <nir@winpdb.org>
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License
@@ -42,6 +41,7 @@ import threading
 import logging
 import inspect
 import socket
+import smarx
 import sys
 
 try:
@@ -49,19 +49,9 @@ try:
 except:
     import _thread as thread
 
-try:
-    #
-    # Use version > 2.0, for significant performance gains over
-    # older versions on some platforms. Can install easily with: 
-    # python easy_install simplejson
-    #
-    import simplejson as json
-except ImportError:
-    import json
 
 
-
-__version__ = '1.0.7'
+__version__ = '1.0.8'
 
 #
 # Bind to loopback to restrict server to local requests, by default.
@@ -73,6 +63,9 @@ BUFFER_SIZE = 4096
 MAX_THREADS = 128
 
 ISPY3K = sys.version_info[0] >= 3
+
+CALL = 0
+NOTIFY = 1
 
 
 
@@ -176,9 +169,8 @@ class Connection(object):
 
     def write(self, data):
         """Write length prefixed data to socket."""
-
-        length = len(data)
-        l = '%08x' % length
+        
+        l = '%08x' % len(data)
         if ISPY3K:
             l = l.encode('utf-8')
 
@@ -188,12 +180,16 @@ class Connection(object):
     def read(self):
         """Read length prefixed data from socket."""
 
-        length = int(self._read(8), 16)
-        return self._read(length)
-
-   
-    def _read(self, length):
         buffer = self._buffer
+
+        while len(buffer) < 8:
+            data = self._conn.recv(BUFFER_SIZE)
+            if not data:
+                raise EofError(len(buffer))
+            buffer += data
+
+        length = int(buffer[:8], 16) + 8
+
         while len(buffer) < length:
             data = self._conn.recv(BUFFER_SIZE)
             if not data:
@@ -201,7 +197,7 @@ class Connection(object):
             buffer += data
 
         self._buffer = buffer[length:]
-        return buffer[: length]
+        return buffer[8: length]
 
 
 
@@ -244,19 +240,7 @@ def _serve_connection(conn, addr, handler_factory):
 
         try:
             while True:
-                data = c.read()
-                
-                if ISPY3K:
-                    data = data.decode('utf-8')
-                
-                response = _dispatch(handler, data)
-                if response is None:
-                    continue
-                
-                if ISPY3K:
-                    response = response.encode('utf-8')
-                
-                c.write(response)
+                _dispatch(handler, c)
 
         except EofError:
             logging.debug('Caught end of file, error=%r.', sys.exc_info()[1])
@@ -267,41 +251,29 @@ def _serve_connection(conn, addr, handler_factory):
 
 
 
-threaded_connection = threaded(_serve_connection)
+def _dispatch(handler, conn):
+    data = conn.read()
+    type, name, args, kwargs = smarx.loads(data)
 
-
-
-def _dispatch(handler, data):
-    """
-    Dispatch call to handler.
-    Notifications arrive with no ID and get no response.
-    """
-
-    try:    
-        id = None
-        work_item = json.loads(data)
-        id = work_item.get('id', None)
-
-        name = work_item['method']
+    foo = handler._methods.get(name, None)
+    if foo is None:
         foo = handler._get_method(name)
-
-        args = work_item['params']
-        kwargs = work_item.get('kwargs', {})
-
-        #
-        # Convert kwargs keys from unicode to strings.
-        #
-        if not ISPY3K and len(kwargs) > 0:
-            kwargs = dict((str(k), v) for k, v in kwargs.items())
-
+    
+    try:    
         result = foo(*args, **kwargs)
-        if id is not None:
-            return json.dumps({'result': result, 'error': None, 'id': id})
-
+        error = None
     except Exception:
         logging.warning('Caught exception raised by callable.', exc_info=True)
-        if id is not None:
-            return json.dumps({'result': None, 'error': repr(sys.exc_info()[1]), 'id': id})
+        result = None
+        error = repr(sys.exc_info()[1])
+
+    if type == CALL:
+        response = smarx.dumps((result, error))
+        conn.write(response)
+
+
+
+threaded_connection = threaded(_serve_connection)
 
 
 
@@ -323,7 +295,10 @@ def start_server(host=LOOPBACK, port=DEFAULT_PORT, on_accept=threaded_connection
             on_accept(conn, addr, handler)
 
     finally:
-        s.shutdown(socket.SHUT_RDWR)
+        try:
+            s.shutdown(socket.SHUT_RDWR)
+        except socket.error:
+            pass
         s.close()
 
 
@@ -335,6 +310,7 @@ def connect(host=LOOPBACK, port=DEFAULT_PORT, connection_type=Connection):
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
+    s.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 0)
 
     return connection_type(s)
 
@@ -350,61 +326,31 @@ class Proxy(object):
 
     def __init__(self, conn):
         self._conn = conn
-        self._id = 1
+        self._name = None
 
 
-    def _proxy(self, async, name, args, kwargs):
+    def __getattr__(self, name):
+        self._name = name
+        return self
+
+
+    def __call__(self, *args, **kwargs):
         """
         Call method on server.
         Asynchhronous calls omit ID and do not wait for response.
         """
        
-        d = {
-            'method': name,
-            'params': args,
-        }
-
-        if not async:
-            d['id'] = self._id
-            self._id += 1
-
-        if len(kwargs) > 0:
-            d['kwargs'] = kargs
-        
-        data = json.dumps(d)
-
-        if ISPY3K:
-            data = data.encode('utf-8')
-
+        data = smarx.dumps((CALL, self._name, args, kwargs))
         self._conn.write(data)
-        if async:
-            return
-
+        
         response = self._conn.read()
-   
-        if ISPY3K:
-            response = response.decode('utf-8')
+        value, error = smarx.loads(response)
+        
+        if error is not None:
+            logging.warning('Error returned by proxy, error=%s.', error)
+            raise ServerError(error)
 
-        r = json.loads(response)
-        if r.get('error', None) is not None:
-            logging.warning('Error returned by proxy, error=%s.', r['error'])
-            raise ServerError(r['error'])
-
-        if r['id'] != d['id']:
-            logging.error('Received unmatching id, sent=%s, received=%s.', d['id'], r['id'])
-            raise ValueError(r['id'])
-
-        return r['result']
-
-
-    def __getattr__(self, name):
-        """Return proxy version of method."""
-
-        def proxy(*args, **kwargs):
-            """Call method on server synchronously."""
-            return self._proxy(False, name, args, kwargs)
-
-        return proxy
+        return value
 
 
 
@@ -416,14 +362,24 @@ class Notifier(Proxy):
     """
 
 
+    def __init__(self, conn):
+        self._conn = conn
+        self._name = None
+
+
     def __getattr__(self, name):
-        """Return async proxy version of method."""
+        self._name = name
+        return self
 
-        def proxy(*args, **kwargs):
-            """Call method on server asynchronously."""
-            return self._proxy(True, name, args, kwargs)
 
-        return proxy
-
+    def __call__(self, *args, **kwargs):
+        """
+        Call method on server.
+        Asynchhronous calls omit ID and do not wait for response.
+        """
+       
+        data = smarx.dumps((NOTIFY, self._name, args, kwargs))
+        self._conn.write(data)
+        
 
 

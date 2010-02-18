@@ -43,6 +43,7 @@ import inspect
 import socket
 import smarx
 import sys
+import os
 
 try:
     import thread
@@ -69,12 +70,12 @@ NOTIFY = 1
 
 
 
-class ServerError(Exception):
+class ServerError(IOError):
     """Wrap server errors by proxy."""
 
 
 
-class EofError(Exception):
+class EofError(IOError):
     """Socket end of file."""
 
 
@@ -89,10 +90,8 @@ class BaseHandler(object):
         self._addr = addr
         self._methods = {}
 
-
     def _close(self):
         self._methods = {}
-
 
     def _get_method(self, name):
         """
@@ -119,14 +118,6 @@ class BaseHandler(object):
 
 
 
-class EchoHandler(BaseHandler):
-    """Echo back call arguments for debugging."""
-
-    def echo(self, *args, **kwargs):
-        return {'*args': args, '**kwargs': kwargs}
-
-
-
 class ExampleHandler(BaseHandler):
     """
     Demonstrate handler inheritance.
@@ -142,19 +133,12 @@ class ExampleHandler(BaseHandler):
 class Connection(object):
     """Wrap socket with buffered read and length prefix for data."""
 
-    def __init__(self, conn):
+    def __init__(self, conn=None):
         self._conn = conn
         self._buffer = ''
         
         if ISPY3K:
             self._buffer = self._buffer.encode('utf-8')
-
-
-    def __getattr__(self, name):
-        """Delegate attributes of socket."""
-
-        return getattr(self._conn, name)
-
 
     def close(self):
         """Shut down and close socket."""
@@ -165,7 +149,6 @@ class Connection(object):
             pass
 
         self._conn.close()
-        
 
     def write(self, data):
         """Write length prefixed data to socket."""
@@ -175,7 +158,6 @@ class Connection(object):
             l = l.encode('utf-8')
 
         self._conn.sendall(l + data)
-
 
     def read(self):
         """Read length prefixed data from socket."""
@@ -201,125 +183,71 @@ class Connection(object):
 
 
 
-g_threads_semaphore = threading.Semaphore(MAX_THREADS)
+class InetConnection(Connection):
+    """Connection type for INET sockets."""
 
-def threaded(foo):
-    """Run foo using bounded number of threads."""
+    def __init__(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        Connection.__init__(self, s)
 
-    def wrapper1(*args, **kwargs):
-        try:
-            foo(*args, **kwargs)
-        finally:
-            g_threads_semaphore.release()
+    def connect(self, host=LOOPBACK, port=DEFAULT_PORT):
+        self._conn.connect((host, port))
+        return self
 
-    def wrapper2(*args, **kwargs):
-        g_threads_semaphore.acquire()
-        thread.start_new_thread(wrapper1, args, kwargs)
+        
 
-    return wrapper2
+class UnixConnection(Connection):
+    """Connection type for Unix sockets."""
 
+    def __init__(self):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        Connection.__init__(self, s)
 
-
-def _serve_connection(conn, addr, handler_factory):
-    """
-    Serve acceptted connection.
-    Should be used in the context of a threaded server, see 
-    threaded_connection(), or fork server (not implemented here).
-    """
-
-    logging.info('Enter, addr=%s.', addr)
-
-    c = Connection(conn)
-
-    try:
-        #
-        # Instantiate handler for the lifetime of the connection,
-        # making it possible to manage a state between calls.
-        #
-        handler = handler_factory(addr)
-
-        try:
-            while True:
-                _dispatch(handler, c)
-
-        except EofError:
-            logging.debug('Caught end of file, error=%r.', sys.exc_info()[1])
-
-    finally:
-        c.close()
-        handler._close()
+    def connect(self, path):
+        self._conn.connect(path)
+        return self
 
 
 
-def _dispatch(handler, conn):
-    data = conn.read()
-    type, name, args, kwargs = smarx.loads(data)
+class BPipe(object):
+    """Interface read/write pipes as a socket."""
 
-    foo = handler._methods.get(name, None)
-    if foo is None:
-        foo = handler._get_method(name)
-    
-    try:    
-        result = foo(*args, **kwargs)
-        error = None
-    except Exception:
-        logging.warning('Caught exception raised by callable.', exc_info=True)
-        result = None
-        error = repr(sys.exc_info()[1])
+    def connect(self, r=None, w=None):
+        self._r = r
+        self._w = w
 
-    if type == CALL:
-        response = smarx.dumps((result, error))
-        conn.write(response)
+    def recv(self, size):
+        return os.read(self._r, size)
 
+    def sendall(self, data):
+        return os.write(self._w, data)
 
+    def shutdown(self, x):
+        pass
 
-threaded_connection = threaded(_serve_connection)
+    def close(self):
+        if self._r is not None:
+            os.close(self._r)
 
-
-
-def start_server(host=LOOPBACK, port=DEFAULT_PORT, on_accept=threaded_connection, handler=EchoHandler):
-    """Start server."""
-
-    logging.info('Enter, handler=%r, port=%d, host=%s.', handler, port, host)
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    try:
-        s.bind((host, port))
-        s.listen(5)
-
-        while True:
-            conn, addr = s.accept()
-            logging.info('Accepted connection from %s.', addr)
-            on_accept(conn, addr, handler)
-
-    finally:
-        try:
-            s.shutdown(socket.SHUT_RDWR)
-        except socket.error:
-            pass
-        s.close()
+        if self._w is not None:
+            os.close(self._w)
 
 
 
-def connect(host=LOOPBACK, port=DEFAULT_PORT, connection_type=Connection):
-    """Connect to server."""
+class PipeConnection(Connection):
+    """Connection type for pipes."""
 
-    logging.info('Enter, host=%s, port=%d.', host, port)
+    def __init__(self):
+        Connection.__init__(self, BPipe())
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((host, port))
-    #s.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 0)
-
-    return connection_type(s)
+    def connect(self, r=None, w=None):
+        self._conn.connect(r, w)
+        return self
 
 
 
 class Proxy(object):
-    """
-    Proxy methods of server handler.
-    
+    """Proxy methods of server handler.
     Call Proxy(connection).foo(*args, **kwargs) to invoke method
     handler.foo(*args, **kwargs) of server handler.
     """
@@ -328,17 +256,12 @@ class Proxy(object):
         self._conn = conn
         self._name = None
 
-
     def __getattr__(self, name):
         self._name = name
         return self
 
-
     def __call__(self, *args, **kwargs):
-        """
-        Call method on server.
-        Asynchhronous calls omit ID and do not wait for response.
-        """
+        """Call method on server."""
        
         data = smarx.dumps((CALL, self._name, args, kwargs))
         self._conn.write(data)
@@ -355,31 +278,168 @@ class Proxy(object):
 
 
 class Notifier(Proxy):
-    """
-    Proxy methods of server handler, asynchronously.
+    """Proxy methods of server handler, asynchronously.
     Call Notifier(connection).foo(*args, **kwargs) to invoke method
     handler.foo(*args, **kwargs) of server handler.
     """
-
 
     def __init__(self, conn):
         self._conn = conn
         self._name = None
 
-
     def __getattr__(self, name):
         self._name = name
         return self
 
-
     def __call__(self, *args, **kwargs):
-        """
-        Call method on server.
-        Asynchhronous calls omit ID and do not wait for response.
-        """
+        """Call method on server, don't wait for response."""
        
         data = smarx.dumps((NOTIFY, self._name, args, kwargs))
         self._conn.write(data)
         
+
+
+g_threads_semaphore = threading.Semaphore(MAX_THREADS)
+
+def run_in_thread(foo):
+    """Decorate to run foo using bounded number of threads."""
+
+    def wrapper1(*args, **kwargs):
+        try:
+            foo(*args, **kwargs)
+        finally:
+            g_threads_semaphore.release()
+
+    def wrapper2(*args, **kwargs):
+        g_threads_semaphore.acquire()
+        thread.start_new_thread(wrapper1, args, kwargs)
+
+    return wrapper2
+
+
+
+class Server(object):
+    """Serve calls over connection."""
+
+    def __init__(self, handler_type, conn=None):
+        self._handler_type = handler_type
+        self._conn = conn
+    
+    def close(self):
+        try:
+            self._conn.shutdown(socket.SHUT_RDWR)
+        except socket.error:
+            pass
+        self._conn.close()
+
+    def start(self):
+        """Start server, is it?
+        Socket is excpted bound.
+        """
+
+        logging.info('Enter.')
+
+        try:
+            self._conn.listen(5)
+
+            while True:
+                conn, addr = self._conn.accept()
+                self._on_accept(conn, addr)
+
+        finally:
+            self.close()
+
+    def _on_accept(self, conn, addr):
+        """Serve acceptted connection.
+        Should be used in the context of a threaded server, see 
+        threaded_connection(), or fork server (not implemented here).
+        """
+
+        logging.info('Enter, addr=%s.', addr)
+
+        c = Connection(conn)
+
+        try:
+            #
+            # Instantiate handler for the lifetime of the connection,
+            # making it possible to manage a state between calls.
+            #
+            handler = self._handler_type(addr)
+
+            try:
+                while True:
+                    self._dispatch(handler, c)
+
+            except EofError:
+                logging.debug('Caught end of file, error=%r.', sys.exc_info()[1])
+
+        finally:
+            c.close()
+            handler._close()
+
+    def _dispatch(self, handler, conn):
+        """Serve single call."""
+
+        data = conn.read()
+        type, name, args, kwargs = smarx.loads(data)
+
+        foo = handler._methods.get(name, None)
+        if foo is None:
+            foo = handler._get_method(name)
+        
+        try:    
+            result = foo(*args, **kwargs)
+            error = None
+        except Exception:
+            logging.warning('Caught exception raised by callable.', exc_info=True)
+            result = None
+            error = repr(sys.exc_info()[1])
+
+        if type == CALL:
+            response = smarx.dumps((result, error))
+            conn.write(response)
+
+
+
+class InetServer(Server):
+    """Serve calls over INET sockets."""
+    
+    def __init__(self, handler_type):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        Server.__init__(self, handler_type, s)
+
+    def start(self, host=LOOPBACK, port=DEFAULT_PORT):
+        self._conn.bind((host, port))
+        Server.start(self) 
+
+    _on_accept = run_in_thread(Server._on_accept)
+
+
+class UnixServer(Server):
+    """Serve calls over Unix sockets."""
+    
+    def __init__(self, handler_type):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        Server.__init__(self, handler_type, s)
+
+    def start(self, path):
+        self._conn.bind(path)
+        Server.start(self) 
+
+    _on_accept = run_in_thread(Server._on_accept)
+
+
+
+class PipeServer(Server):
+    """Serve calls over pipes."""
+
+    def __init__(self, handler_type):
+        Server.__init__(self, handler_type, BPipe())
+
+    def start(self, r, w=None):
+        self._conn.connect(r, w)
+        self._on_accept(self._conn, 'pipes')
+   
 
 

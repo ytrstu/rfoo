@@ -3,21 +3,33 @@
 
     Fast RPC server.
 
-    Copyright (C) 2010 Nir Aides <nir@winpdb.org>
+    Copyright (c) 2010 Nir Aides <nir@winpdb.org> and individual contributors.
+    All rights reserved.
 
-    This program is free software; you can redistribute it and/or
-    modify it under the terms of the GNU General Public License
-    as published by the Free Software Foundation; either version 2
-    of the License, or (at your option) any later version.
+    Redistribution and use in source and binary forms, with or without modification,
+    are permitted provided that the following conditions are met:
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+    1. Redistributions of source code must retain the above copyright notice, 
+    this list of conditions and the following disclaimer.
 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+    2. Redistributions in binary form must reproduce the above copyright 
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+    3. Neither the name of Nir Aides nor the names of other contributors may 
+    be used to endorse or promote products derived from this software without
+    specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+    ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+    WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+    ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+    (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+    LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+    ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 """
@@ -41,9 +53,10 @@ import threading
 import logging
 import inspect
 import socket
-import smarx
 import sys
 import os
+
+import rfoo.marsh as marsh
 
 try:
     import thread
@@ -52,7 +65,7 @@ except:
 
 
 
-__version__ = '1.0.8'
+__version__ = '1.1.0'
 
 #
 # Bind to loopback to restrict server to local requests, by default.
@@ -263,11 +276,11 @@ class Proxy(object):
     def __call__(self, *args, **kwargs):
         """Call method on server."""
        
-        data = smarx.dumps((CALL, self._name, args, kwargs))
+        data = marsh.dumps((CALL, self._name, args, kwargs))
         self._conn.write(data)
         
         response = self._conn.read()
-        value, error = smarx.loads(response)
+        value, error = marsh.loads(response)
         
         if error is not None:
             logging.warning('Error returned by proxy, error=%s.', error)
@@ -294,7 +307,7 @@ class Notifier(Proxy):
     def __call__(self, *args, **kwargs):
         """Call method on server, don't wait for response."""
        
-        data = smarx.dumps((NOTIFY, self._name, args, kwargs))
+        data = marsh.dumps((NOTIFY, self._name, args, kwargs))
         self._conn.write(data)
         
 
@@ -381,7 +394,7 @@ class Server(object):
         """Serve single call."""
 
         data = conn.read()
-        type, name, args, kwargs = smarx.loads(data)
+        type, name, args, kwargs = marsh.loads(data)
 
         foo = handler._methods.get(name, None)
         if foo is None:
@@ -396,7 +409,7 @@ class Server(object):
             error = repr(sys.exc_info()[1])
 
         if type == CALL:
-            response = smarx.dumps((result, error))
+            response = marsh.dumps((result, error))
             conn.write(response)
 
 
@@ -414,6 +427,7 @@ class InetServer(Server):
         Server.start(self) 
 
     _on_accept = run_in_thread(Server._on_accept)
+
 
 
 class UnixServer(Server):
@@ -441,5 +455,19 @@ class PipeServer(Server):
         self._conn.connect(r, w)
         self._on_accept(self._conn, 'pipes')
    
+
+
+def start_server(handler, host=LOOPBACK, port=DEFAULT_PORT):
+    "Start server - depratcated."""
+
+    InetServer(handler).start(host, port)
+
+
+
+def connect(host=LOOPBACK, port=DEFAULT_PORT):
+    """Connect to server - depracated."""
+
+    return InetConnection().connect(host, port)
+    
 
 

@@ -4,12 +4,14 @@ rfoo - Fast RPC client/server module.
 Contact: Nir Aides
 Email:   nir@winpdb.org
 Website: http://www.winpdb.org/
-Version: 1.0.8
+Version: 1.1.0
 
 
 Requirements
 
-    Depends on smarx serialization module - http://code.google.com/p/smarx/
+    Depends on Cython - http://cython.org/
+    To install Cython follow the simple instructions at
+    http://docs.cython.org/src/quickstart/install.html
 
     Tested on GNU/Linux:
      Ubuntu 8.10 64bit, Python 2.5

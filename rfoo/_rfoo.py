@@ -56,7 +56,13 @@ import socket
 import sys
 import os
 
-import rfoo.marsh as marsh
+try:
+    import rfoo.marsh as marsh
+except ImportError:
+    sys.stderr.write("""To use rfoo directly from source archive first build
+the Cython extension module rfoo.marsh inplace with:
+    python setup.py build_ext --inplace\n""")
+    raise
 
 try:
     import thread
@@ -65,7 +71,7 @@ except:
 
 
 
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 
 #
 # Bind to loopback to restrict server to local requests, by default.
@@ -116,6 +122,9 @@ class BaseHandler(object):
         if m is not None:
             return m
 
+        if name in ('trait_names', '_getAttributeNames'):
+            return self._getAttributeNames
+
         if name.startswith('_'):
             logging.warning('Attempt to get non-public, attribute=%s.', name)
             raise ValueError(name)
@@ -128,6 +137,14 @@ class BaseHandler(object):
         self._methods[name] = m
 
         return m
+
+    def _getAttributeNames(self, *args, **kwargs):
+        """Return list of public methods.
+        Support auto completion by IPython of proxy methods over network.
+        """
+        
+        members = inspect.getmembers(self, inspect.ismethod)
+        return [m[0] for m in members if not m[0].startswith('_')]
 
 
 
@@ -156,12 +173,12 @@ class Connection(object):
     def close(self):
         """Shut down and close socket."""
 
-        try:
-            self._conn.shutdown(socket.SHUT_RDWR)
-        except socket.error:
-            pass
-
-        self._conn.close()
+        if self._conn is not None:
+            try:
+                self._conn.shutdown(socket.SHUT_RDWR)
+            except socket.error:
+                pass
+            self._conn.close()
 
     def write(self, data):
         """Write length prefixed data to socket."""
@@ -222,12 +239,22 @@ class UnixConnection(Connection):
 
 
 
-class BPipe(object):
-    """Interface read/write pipes as a socket."""
+class PipeSocket(object):
+    """Abstract two pipes into socket like interface."""
 
-    def connect(self, r=None, w=None):
-        self._r = r
-        self._w = w
+    def __init__(self, to_server=None, to_client=None):
+        self._to_server = to_server or os.pipe()
+        self._to_client = to_client or os.pipe()
+
+    def connect(self):
+        self._r = self._to_client[0]
+        self._w = self._to_server[1]
+
+    def _connect_server(self):
+        server_end = PipeSocket(self._to_server, self._to_client)
+        server_end._r = self._to_server[0]
+        server_end._w = self._to_client[1]
+        return server_end
 
     def recv(self, size):
         return os.read(self._r, size)
@@ -239,22 +266,22 @@ class BPipe(object):
         pass
 
     def close(self):
-        if self._r is not None:
-            os.close(self._r)
-
-        if self._w is not None:
-            os.close(self._w)
+        try:
+            os.close(self._to_server[0])
+            os.close(self._to_server[1])
+            os.close(self._to_client[0])
+            os.close(self._to_client[1])
+        except Exception:
+            pass
 
 
 
 class PipeConnection(Connection):
     """Connection type for pipes."""
 
-    def __init__(self):
-        Connection.__init__(self, BPipe())
-
-    def connect(self, r=None, w=None):
-        self._conn.connect(r, w)
+    def connect(self, pipe_socket):
+        self._conn = pipe_socket
+        self._conn.connect()
         return self
 
 
@@ -339,11 +366,12 @@ class Server(object):
         self._conn = conn
     
     def close(self):
-        try:
-            self._conn.shutdown(socket.SHUT_RDWR)
-        except socket.error:
-            pass
-        self._conn.close()
+        if self._conn is not None:
+            try:
+                self._conn.shutdown(socket.SHUT_RDWR)
+            except socket.error:
+                pass
+            self._conn.close()
 
     def start(self):
         """Start server, is it?
@@ -396,11 +424,11 @@ class Server(object):
         data = conn.read()
         type, name, args, kwargs = marsh.loads(data)
 
-        foo = handler._methods.get(name, None)
-        if foo is None:
-            foo = handler._get_method(name)
-        
         try:    
+            foo = handler._methods.get(name, None)
+            if foo is None:
+                foo = handler._get_method(name)
+        
             result = foo(*args, **kwargs)
             error = None
         except Exception:
@@ -449,10 +477,10 @@ class PipeServer(Server):
     """Serve calls over pipes."""
 
     def __init__(self, handler_type):
-        Server.__init__(self, handler_type, BPipe())
+        Server.__init__(self, handler_type)
 
-    def start(self, r, w=None):
-        self._conn.connect(r, w)
+    def start(self, pipe_socket):
+        self._conn = pipe_socket._connect_server()
         self._on_accept(self._conn, 'pipes')
    
 

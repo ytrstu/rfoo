@@ -70,24 +70,16 @@ cdef int verify_string(char *s, int length):
     cdef int m
 
     while s < eof:
-        if s[0] in (LIST, TUPLE, SET, FROZEN_SET):
-            s += 5
-            continue
-
-        if s[0] in (DICT, DICT_CLOSE):
-            s += 1
-            continue
-
-        if s[0] in (NONE, TRUE, FALSE):
-            s += 1
-            continue
-
         if s[0] == INT32:
             s += 5
             continue
 
         if s[0] in (INT64, BINARY_FLOAT):
             s += 9
+            continue
+
+        if s[0] in (NONE, TRUE, FALSE):
+            s += 1
             continue
 
         if s[0] == FLOAT:
@@ -108,6 +100,14 @@ cdef int verify_string(char *s, int length):
                 m *= 256
 
             s += 5 + v
+            continue
+
+        if s[0] in (LIST, TUPLE, SET, FROZEN_SET):
+            s += 5
+            continue
+
+        if s[0] in (DICT, DICT_CLOSE):
+            s += 1
             continue
 
         return 0

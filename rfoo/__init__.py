@@ -49,7 +49,7 @@
 
 
 
-from _rfoo import *
+from rfoo._rfoo import *
 
 
 

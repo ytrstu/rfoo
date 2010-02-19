@@ -94,6 +94,7 @@ class DummySocket(object):
         self._conn = conn
         self._buffer = ''
         self._counter = 0
+        self._server = rfoo.Server(self._handler)
 
     def shutdown(self, x):
         pass
@@ -106,7 +107,7 @@ class DummySocket(object):
 
         self._counter += 1
         if self._counter % 2 == 1:
-            rfoo._rfoo._dispatch(self._handler, self._conn)
+            self._server._dispatch(self._handler, self._conn)
 
     def recv(self, size):
         data = self._buffer[:size]

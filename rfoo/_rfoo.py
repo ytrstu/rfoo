@@ -165,10 +165,6 @@ class Connection(object):
 
     def __init__(self, conn=None):
         self._conn = conn
-        self._buffer = ''
-        
-        if ISPY3K:
-            self._buffer = self._buffer.encode('utf-8')
 
     def close(self):
         """Shut down and close socket."""
@@ -192,24 +188,23 @@ class Connection(object):
     def read(self):
         """Read length prefixed data from socket."""
 
-        buffer = self._buffer
-
+        buffer = self._conn.recv(8)
         while len(buffer) < 8:
-            data = self._conn.recv(BUFFER_SIZE)
+            data = self._conn.recv(8 - len(buffer))
             if not data:
                 raise EofError(len(buffer))
             buffer += data
 
-        length = int(buffer[:8], 16) + 8
+        length = int(buffer, 16)
 
+        buffer = self._conn.recv(length)
         while len(buffer) < length:
-            data = self._conn.recv(BUFFER_SIZE)
+            data = self._conn.recv(length - len(buffer))
             if not data:
                 raise EofError(len(buffer))
             buffer += data
 
-        self._buffer = buffer[length:]
-        return buffer[8: length]
+        return buffer
 
 
 
@@ -309,11 +304,11 @@ class Proxy(object):
         response = self._conn.read()
         value, error = marsh.loads(response)
         
-        if error is not None:
-            logging.warning('Error returned by proxy, error=%s.', error)
-            raise ServerError(error)
+        if error is None:
+            return value
 
-        return value
+        logging.warning('Error returned by proxy, error=%s.', error)
+        raise ServerError(error)
 
 
 
@@ -425,12 +420,10 @@ class Server(object):
         type, name, args, kwargs = marsh.loads(data)
 
         try:    
-            foo = handler._methods.get(name, None)
-            if foo is None:
-                foo = handler._get_method(name)
-        
+            foo = handler._methods.get(name, None) or handler._get_method(name)
             result = foo(*args, **kwargs)
             error = None
+
         except Exception:
             logging.warning('Caught exception raised by callable.', exc_info=True)
             result = None

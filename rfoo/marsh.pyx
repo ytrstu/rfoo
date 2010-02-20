@@ -61,10 +61,10 @@ cdef char DICT = '{'
 cdef char DICT_CLOSE = '0'
 
 
-cdef int verify_string(char *s, int length):
+cdef int verify_string(unsigned char *s, int length):
     """Verify marshaled data contains supported data types only."""
 
-    cdef char *eof = s + length
+    cdef unsigned char *eof = s + length
     cdef int i
     cdef int v
     cdef int m

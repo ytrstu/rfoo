@@ -60,34 +60,6 @@ ISPY3K = sys.version_info[0] >= 3
 
 
 
-class TestHandler(rfoo.BaseHandler):
-    def __init__(self, *args, **kwargs):
-        rfoo.BaseHandler.__init__(self, *args, **kwargs)
-
-        self._t = 0
-
-
-    def iterate(self, n, verbose=False):
-        """Iterate n times and return timings."""
-
-        return 1, 1
-
-        n0 = n
-        t0 = time.time()
-
-        while n > 0:
-            n -= 1
-
-        t1 = time.time()
-        self._t += t1 - t0
-
-        if verbose:
-            logging.warning('Ran %d iterations in %f seconds.', n0, t1 - t0)
-
-        return self._t, t1 - t0
-
-    
-
 class DummySocket(object):
     def __init__(self, handler, conn):
         self._handler = handler
@@ -202,7 +174,7 @@ def main():
     try:
         if '-s' in options:
             logging.warning('Start as server.')
-            rfoo.start_server(host=host, port=port, handler=TestHandler)
+            rfoo.start_server(host=host, port=port, handler=rfoo.ExampleHandler)
             return
             
         logging.warning('Start as client.')
@@ -228,7 +200,7 @@ def main():
             if '-c' in options:
                 for i in range(m):
                     connection = rfoo.connect(host=host, port=port)
-                    r = rfoo.Proxy(connection).iterate(data, verbose)
+                    r = rfoo.Proxy(connection).echo(data)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
                     connection.close()
@@ -237,11 +209,11 @@ def main():
             # Time with dummy connection (no network).
             #
             elif '-u' in options:
-                handler = TestHandler()
+                handler = rfoo.ExampleHandler()
                 dummy = DummyConnection(handler)
-                iterate = gate(dummy).iterate
+                echo = gate(dummy).echo
                 for i in range(m):
-                    r = iterate(data, verbose)
+                    r = echo(data)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
 
@@ -250,9 +222,9 @@ def main():
             #
             else:
                 connection = rfoo.connect(host=host, port=port)
-                iterate = gate(connection).iterate
+                echo = gate(connection).echo
                 for i in range(m):
-                    r = iterate(data, verbose)
+                    r = echo(data)
                     if level == logging.DEBUG:
                         logging.debug('Received %r from proxy.', r)
 

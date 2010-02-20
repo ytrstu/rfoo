@@ -52,12 +52,13 @@
 import threading
 import logging
 import inspect
+import marshal
 import socket
 import sys
 import os
 
 try:
-    import rfoo.marsh as marsh
+    from rfoo.marsh import dumps, loads
 except ImportError:
     sys.stderr.write("""To use rfoo directly from source archive first build
 the Cython extension module rfoo.marsh inplace with:
@@ -81,8 +82,6 @@ DEFAULT_PORT = 52431
 BUFFER_SIZE = 4096
 
 MAX_THREADS = 128
-
-ISPY3K = sys.version_info[0] >= 3
 
 CALL = 0
 NOTIFY = 1
@@ -158,6 +157,9 @@ class ExampleHandler(BaseHandler):
     def add(self, x, y):
         return x + y
 
+    def echo(self, s):
+        return s
+
 
 
 class Connection(object):
@@ -179,24 +181,23 @@ class Connection(object):
     def write(self, data):
         """Write length prefixed data to socket."""
         
-        l = '%08x' % len(data)
-        if ISPY3K:
-            l = l.encode('utf-8')
-
+        l = dumps(len(data))
         self._conn.sendall(l + data)
 
     def read(self):
         """Read length prefixed data from socket."""
 
-        buffer = self._conn.recv(8)
-        while len(buffer) < 8:
-            data = self._conn.recv(8 - len(buffer))
+        buffer = self._conn.recv(5)
+        while len(buffer) < 5:
+            data = self._conn.recv(5 - len(buffer))
             if not data:
                 raise EofError(len(buffer))
             buffer += data
 
-        length = int(buffer, 16)
+        if buffer[0] != 'i':
+            raise IOError()
 
+        length = marshal.loads(buffer)
         buffer = self._conn.recv(length)
         while len(buffer) < length:
             data = self._conn.recv(length - len(buffer))
@@ -298,11 +299,11 @@ class Proxy(object):
     def __call__(self, *args, **kwargs):
         """Call method on server."""
        
-        data = marsh.dumps((CALL, self._name, args, kwargs))
+        data = dumps((CALL, self._name, args, kwargs))
         self._conn.write(data)
         
         response = self._conn.read()
-        value, error = marsh.loads(response)
+        value, error = loads(response)
         
         if error is None:
             return value
@@ -329,7 +330,7 @@ class Notifier(Proxy):
     def __call__(self, *args, **kwargs):
         """Call method on server, don't wait for response."""
        
-        data = marsh.dumps((NOTIFY, self._name, args, kwargs))
+        data = dumps((NOTIFY, self._name, args, kwargs))
         self._conn.write(data)
         
 
@@ -417,7 +418,7 @@ class Server(object):
         """Serve single call."""
 
         data = conn.read()
-        type, name, args, kwargs = marsh.loads(data)
+        type, name, args, kwargs = loads(data)
 
         try:    
             foo = handler._methods.get(name, None) or handler._get_method(name)
@@ -430,7 +431,7 @@ class Server(object):
             error = repr(sys.exc_info()[1])
 
         if type == CALL:
-            response = marsh.dumps((result, error))
+            response = dumps((result, error))
             conn.write(response)
 
 

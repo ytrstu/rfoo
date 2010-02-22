@@ -59,7 +59,7 @@ ext_modules = [Extension("rfoo.marsh", ["rfoo/marsh.pyx"])]
 
 setup(
     name = 'rfoo',
-    version = '1.1.1',
+    version = '1.1.2',
     description = 'Fast RPC client/server module.',
     author = 'Nir Aides',
     author_email = 'nir@winpdb.org',

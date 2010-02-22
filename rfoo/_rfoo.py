@@ -52,10 +52,11 @@
 import threading
 import logging
 import inspect
-import marshal
 import socket
 import sys
 import os
+
+import marshal as _marshal
 
 try:
     from rfoo.marsh import dumps, loads
@@ -72,7 +73,7 @@ except:
 
 
 
-__version__ = '1.1.1'
+__version__ = '1.1.2'
 
 #
 # Bind to loopback to restrict server to local requests, by default.
@@ -197,7 +198,7 @@ class Connection(object):
         if buffer[0] != 'i':
             raise IOError()
 
-        length = marshal.loads(buffer)
+        length = _marshal.loads(buffer)
         buffer = self._conn.recv(length)
         while len(buffer) < length:
             data = self._conn.recv(length - len(buffer))
@@ -214,6 +215,7 @@ class InetConnection(Connection):
 
     def __init__(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         Connection.__init__(self, s)
 
     def connect(self, host=LOOPBACK, port=DEFAULT_PORT):
@@ -318,14 +320,6 @@ class Notifier(Proxy):
     Call Notifier(connection).foo(*args, **kwargs) to invoke method
     handler.foo(*args, **kwargs) of server handler.
     """
-
-    def __init__(self, conn):
-        self._conn = conn
-        self._name = None
-
-    def __getattr__(self, name):
-        self._name = name
-        return self
 
     def __call__(self, *args, **kwargs):
         """Call method on server, don't wait for response."""

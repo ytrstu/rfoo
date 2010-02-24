@@ -65,6 +65,7 @@ cdef int verify_string(unsigned char *s, int length):
     """Verify marshaled data contains supported data types only."""
 
     cdef unsigned char *eof = s + length
+    cdef int nstrings = 0
     cdef int i
     cdef int v
     cdef int m
@@ -89,7 +90,21 @@ cdef int verify_string(unsigned char *s, int length):
             s += 2 + s[1]
             continue
 
-        if s[0] in (STRINGREF, UNICODE, STRING, INTERNED):
+        if s[0] in (UNICODE, STRING, INTERNED):
+            if eof - s < 5:
+                return 0
+
+            nstrings += 1
+            m = 1
+            v = 0
+            for i in range(1, 5):
+                v += m * s[i]
+                m *= 256
+
+            s += 5 + v
+            continue
+
+        if s[0] == STRINGREF:
             if eof - s < 5:
                 return 0
 
@@ -99,7 +114,11 @@ cdef int verify_string(unsigned char *s, int length):
                 v += m * s[i]
                 m *= 256
 
-            s += 5 + v
+            # String reference to non-existing string.
+            if v >= nstrings:
+                return 0
+
+            s += 5
             continue
 
         if s[0] in (LIST, TUPLE, SET, FROZEN_SET):

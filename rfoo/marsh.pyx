@@ -61,14 +61,14 @@ cdef char DICT = '{'
 cdef char DICT_CLOSE = '0'
 
 
-cdef int verify_string(unsigned char *s, int length):
+cdef int verify_string(unsigned char *s, unsigned int length):
     """Verify marshaled data contains supported data types only."""
 
     cdef unsigned char *eof = s + length
-    cdef int nstrings = 0
-    cdef int i
-    cdef int v
-    cdef int m
+    cdef unsigned int nstrings = 0
+    cdef unsigned int i
+    cdef unsigned int v
+    cdef unsigned int m
 
     while s < eof:
         if s[0] == INT32:
@@ -84,17 +84,19 @@ cdef int verify_string(unsigned char *s, int length):
             continue
 
         if s[0] == FLOAT:
-            if eof - s < 2:
+            if s + 2 > eof:
                 return 0
 
             s += 2 + s[1]
             continue
 
         if s[0] in (UNICODE, STRING, INTERNED):
-            if eof - s < 5:
+            if s + 5 > eof:
                 return 0
 
-            nstrings += 1
+            if s[0] == INTERNED:
+                nstrings += 1
+
             m = 1
             v = 0
             for i in range(1, 5):
@@ -105,7 +107,7 @@ cdef int verify_string(unsigned char *s, int length):
             continue
 
         if s[0] == STRINGREF:
-            if eof - s < 5:
+            if s + 5 > eof:
                 return 0
 
             m = 1

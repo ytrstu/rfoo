@@ -73,7 +73,7 @@ except:
 
 
 
-__version__ = '1.1.2'
+__version__ = '1.1.3'
 
 #
 # Bind to loopback to restrict server to local requests, by default.

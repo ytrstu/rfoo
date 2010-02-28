@@ -332,25 +332,26 @@ class Proxy(object):
 
         try:
             name, args = error
-            # Decode server error comming from Py2.x server for Py3.x client.
-            if type(name) is not str:
-                name = name.decode()
-
         except TypeError:
             # Handle old way of returning error as repr.
             logging.warning('Unknown error returned by proxy, error=%s.', error)
             raise ServerError(error)
 
-        # Handle non-built-in errors, args is repr of original error.
-        if name not in BUILTIN_EXCEPTIONS_NAMES:
-            logging.warning('Unknon error returned by proxy, error=%s.', args)
-            raise ServerError(name, args)
-            
         logging.warning('Error returned by proxy, name=%s, args=%s.', name, args)
-        e = getattr(builtins, name)()
-        e.args = args
-        raise e
 
+        # Raise built-in exceptions sent by server.
+        if name in BUILTIN_EXCEPTIONS_NAMES:
+            e = getattr(builtins, name)()
+            e.args = args
+            raise e
+
+        self._on_exception(name, args)
+
+    def _on_exception(self, name, args):
+        """Override to raise custom exceptions."""
+
+        raise ServerError(name, args)
+            
 
 
 class Notifier(Proxy):
@@ -464,7 +465,7 @@ class Server(object):
             if t in BUILTIN_EXCEPTIONS:
                 error = (t.__name__, v.args)
             else:
-                error = ('?', repr((t, v)))
+                error = (repr(t), v.args)
             result = None
 
         if type == CALL:

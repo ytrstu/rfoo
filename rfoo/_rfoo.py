@@ -343,7 +343,7 @@ class Proxy(object):
         if name in BUILTIN_EXCEPTIONS_NAMES:
             e = getattr(builtins, name)()
             e.args = args
-            raise e
+            raise e # Exception sent from server. Original traceback unavailable.
 
         self._on_exception(name, args)
 

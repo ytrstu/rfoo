@@ -35,16 +35,16 @@
 """
     Example:
 
-    class MyHandler(BaseHandler):
+    class MyHandler(rfoo.BaseHandler):
         def echo(self, str):
             return str
 
-    start_server(handler=MyHandler)
+    rfoo.InetServer(MyHandler).start()
 
     --- client---
 
-    conn = connect()
-    Proxy(conn).echo('Hello World!')
+    c = InetConnection().connect()
+    rfoo.Proxy(c).echo('Hello World!')
 """
 
 

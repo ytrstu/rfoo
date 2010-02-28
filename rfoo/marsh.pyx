@@ -47,6 +47,7 @@ cdef char TRUE = 'T'
 cdef char FALSE = 'F'
 cdef char INT32 = 'i'
 cdef char INT64 = 'I'
+cdef char LONG = 'l'
 cdef char FLOAT = 'f'
 cdef char BINARY_FLOAT = 'g'
 cdef char STRINGREF = 'R'
@@ -78,6 +79,19 @@ cdef int verify_string(char *s_, unsigned int length):
 
         if s[0] in (INT64, BINARY_FLOAT):
             s += 9
+            continue
+
+        if s[0] == LONG:
+            if s + 5 > eof:
+                return 0
+
+            m = 1
+            v = 0
+            for i in range(1, 5):
+                v += m * s[i]
+                m *= 256
+
+            s += 5 + v * 2
             continue
 
         if s[0] in (NONE, TRUE, FALSE):

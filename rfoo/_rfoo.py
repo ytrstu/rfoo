@@ -68,8 +68,13 @@ the Cython extension module rfoo.marsh inplace with:
 
 try:
     import thread
-except:
+except ImportError:
     import _thread as thread
+
+try:
+    import __builtin__ as builtins
+except ImportError:
+    import builtins
 
 
 
@@ -84,6 +89,23 @@ MAX_THREADS = 128
 
 CALL = 0
 NOTIFY = 1
+
+# Compatible way to represent binary 'i' across Py2.x Py3.x.
+INTEGER = 'i'.encode()[0]
+
+
+
+def _is_builtin_exception(t):
+    # Use try except or find way to tell a class in Python 2.4.
+    try:
+        return issubclass(t, Exception)
+    except:
+        return False
+
+
+
+BUILTIN_EXCEPTIONS = set(e for e in vars(builtins).values() if _is_builtin_exception(e))
+BUILTIN_EXCEPTIONS_NAMES = set(e.__name__ for e in BUILTIN_EXCEPTIONS)
 
 
 
@@ -193,7 +215,7 @@ class Connection(object):
                 raise EofError(len(buffer))
             buffer += data
 
-        if buffer[0] != 'i':
+        if buffer[0] != INTEGER:
             raise IOError()
 
         length = _marshal.loads(buffer)
@@ -308,8 +330,26 @@ class Proxy(object):
         if error is None:
             return value
 
-        logging.warning('Error returned by proxy, error=%s.', error)
-        raise ServerError(error)
+        try:
+            name, args = error
+            # Decode server error comming from Py2.x server for Py3.x client.
+            if type(name) is not str:
+                name = name.decode()
+
+        except TypeError:
+            # Handle old way of returning error as repr.
+            logging.warning('Unknown error returned by proxy, error=%s.', error)
+            raise ServerError(error)
+
+        # Handle non-built-in errors, args is repr of original error.
+        if name not in BUILTIN_EXCEPTIONS_NAMES:
+            logging.warning('Unknon error returned by proxy, error=%s.', args)
+            raise ServerError(name, args)
+            
+        logging.warning('Error returned by proxy, name=%s, args=%s.', name, args)
+        e = getattr(builtins, name)()
+        e.args = args
+        raise e
 
 
 
@@ -418,9 +458,14 @@ class Server(object):
             error = None
 
         except Exception:
-            logging.warning('Caught exception raised by callable.', exc_info=True)
+            logging.debug('Caught exception raised by callable.', exc_info=True)
+            # Use exc_info for py2.x py3.x compatibility.
+            t, v, tb = sys.exc_info()
+            if t in BUILTIN_EXCEPTIONS:
+                error = (t.__name__, v.args)
+            else:
+                error = ('?', repr((t, v)))
             result = None
-            error = repr(sys.exc_info()[1])
 
         if type == CALL:
             response = dumps((result, error))

@@ -4,7 +4,7 @@ rfoo - Fast RPC client/server module.
 Contact: Nir Aides
 Email:   nir@winpdb.org
 Website: http://www.winpdb.org/
-Version: 1.1.4
+Version: 1.2.0
 
 
 Requirements
@@ -14,7 +14,8 @@ Requirements
     http://docs.cython.org/src/quickstart/install.html
 
     Tested on GNU/Linux:
-     Ubuntu 8.10 64bit, Python 2.5
+     Ubuntu 8.10 64bit, Python 2.5, Python 3.2
+     CentOS 64bit, Python 2.4
 
 	
 Installation

@@ -95,6 +95,11 @@ INTEGER = 'i'.encode()[0]
 
 
 
+_loads = _marshal.loads
+_dumps = _marshal.dumps
+
+
+
 def _is_builtin_exception(t):
     # Use try except or find way to tell a class in Python 2.4.
     try:
@@ -188,6 +193,7 @@ class Connection(object):
 
     def __init__(self, conn=None):
         self._conn = conn
+        self.recv = self._conn.recv
 
     def close(self):
         """Shut down and close socket."""
@@ -202,15 +208,15 @@ class Connection(object):
     def write(self, data):
         """Write length prefixed data to socket."""
         
-        l = dumps(len(data))
+        l = _dumps(len(data))
         self._conn.sendall(l + data)
 
     def read(self):
         """Read length prefixed data from socket."""
 
-        buffer = self._conn.recv(5)
+        buffer = self.recv(5)
         while len(buffer) < 5:
-            data = self._conn.recv(5 - len(buffer))
+            data = self.recv(5 - len(buffer))
             if not data:
                 raise EofError(len(buffer))
             buffer += data
@@ -218,10 +224,10 @@ class Connection(object):
         if buffer[0] != INTEGER:
             raise IOError()
 
-        length = _marshal.loads(buffer)
-        buffer = self._conn.recv(length)
+        length = _loads(buffer)
+        buffer = self.recv(length)
         while len(buffer) < length:
-            data = self._conn.recv(length - len(buffer))
+            data = self.recv(length - len(buffer))
             if not data:
                 raise EofError(len(buffer))
             buffer += data
@@ -310,13 +316,18 @@ class Proxy(object):
     handler.foo(*args, **kwargs) of server handler.
     """
 
-    def __init__(self, conn):
+    def __init__(self, conn, name=None, cache=True):
         self._conn = conn
-        self._name = None
+        self._name = name
+        self._cache = True
 
     def __getattr__(self, name):
-        self._name = name
-        return self
+        attr = type(self)(self._conn, name, self._cache)
+
+        if self._cache:
+            self.__dict__[name] = attr.__call__
+
+        return attr.__call__
 
     def __call__(self, *args, **kwargs):
         """Call method on server."""
@@ -447,30 +458,31 @@ class Server(object):
             c.close()
             handler._close()
 
-    def _dispatch(self, handler, conn):
+    def _dispatch(self, handler, conn, n=1000):
         """Serve single call."""
 
-        data = conn.read()
-        type, name, args, kwargs = loads(data)
+        for i in range(n):
+            data = conn.read()
+            type, name, args, kwargs = loads(data)
 
-        try:    
-            foo = handler._methods.get(name, None) or handler._get_method(name)
-            result = foo(*args, **kwargs)
-            error = None
+            try:    
+                foo = handler._methods.get(name, None) or handler._get_method(name)
+                result = foo(*args, **kwargs)
+                error = None
 
-        except Exception:
-            logging.debug('Caught exception raised by callable.', exc_info=True)
-            # Use exc_info for py2.x py3.x compatibility.
-            t, v, tb = sys.exc_info()
-            if t in BUILTIN_EXCEPTIONS:
-                error = (t.__name__, v.args)
-            else:
-                error = (repr(t), v.args)
-            result = None
+            except Exception:
+                logging.debug('Caught exception raised by callable.', exc_info=True)
+                # Use exc_info for py2.x py3.x compatibility.
+                t, v, tb = sys.exc_info()
+                if t in BUILTIN_EXCEPTIONS:
+                    error = (t.__name__, v.args)
+                else:
+                    error = (repr(t), v.args)
+                result = None
 
-        if type == CALL:
-            response = dumps((result, error))
-            conn.write(response)
+            if type == CALL:
+                response = dumps((result, error))
+                conn.write(response)
 
 
 

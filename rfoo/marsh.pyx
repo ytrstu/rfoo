@@ -60,6 +60,7 @@ cdef char SET = '<'
 cdef char FROZEN_SET = '>'
 cdef char DICT = '{'
 cdef char DICT_CLOSE = '0'
+cdef char PAD = '_'
 
 
 cdef int verify_string(char *s_, unsigned int length):
@@ -145,6 +146,12 @@ cdef int verify_string(char *s_, unsigned int length):
         if s[0] in (DICT, DICT_CLOSE):
             s += 1
             continue
+
+        if s[0] == PAD:
+            s += 1
+            while s < eof and s[0] == PAD:
+                s += 1
+            return s == eof
 
         return 0
 

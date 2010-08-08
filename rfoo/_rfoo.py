@@ -93,6 +93,9 @@ NOTIFY = 1
 # Compatible way to represent binary 'i' across Py2.x Py3.x.
 INTEGER = 'i'.encode()[0]
 
+LENGTH_THRESHOLD = 64
+LENGTH_FILLER = '_' * 64
+
 
 
 _loads = _marshal.loads
@@ -207,14 +210,21 @@ class Connection(object):
 
     def write(self, data):
         """Write length prefixed data to socket."""
-        
-        l = _dumps(len(data))
-        self._conn.sendall(l + data)
+       
+        if len(data) <= LENGTH_THRESHOLD:
+            data = (data + LENGTH_FILLER)[:LENGTH_THRESHOLD]
+        else:
+            data = _dumps(len(data)) + data
+
+        self._conn.sendall(data)
 
     def read(self):
         """Read length prefixed data from socket."""
 
-        buffer = self.recv(5)
+        buffer = self.recv(LENGTH_THRESHOLD)
+        if len(buffer) == LENGTH_THRESHOLD and buffer[0] != INTEGER:
+            return buffer
+
         while len(buffer) < 5:
             data = self.recv(5 - len(buffer))
             if not data:
@@ -224,8 +234,8 @@ class Connection(object):
         if buffer[0] != INTEGER:
             raise IOError()
 
-        length = _loads(buffer)
-        buffer = self.recv(length)
+        length = _loads(buffer[:5])
+        buffer = buffer[5:]
         while len(buffer) < length:
             data = self.recv(length - len(buffer))
             if not data:

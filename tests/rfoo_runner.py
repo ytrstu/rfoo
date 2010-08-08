@@ -225,8 +225,8 @@ def main():
                 echo = gate(connection).echo
                 for i in range(m):
                     r = echo(data)
-                    if level == logging.DEBUG:
-                        logging.debug('Received %r from proxy.', r)
+                    #if level == logging.DEBUG:
+                    #    logging.debug('Received %r from proxy.', r)
 
             logging.warning('Received %r from proxy.', r)
 

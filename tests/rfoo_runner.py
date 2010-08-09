@@ -180,9 +180,9 @@ def main():
         logging.warning('Start as client.')
 
         if len(args) > 0:
-            data = int(args[0])
+            data = 'x' * int(args[0])
         else:
-            data = 1
+            data = 'x'
 
         n = int(options.get('-n', 1))
         t = int(options.get('-t', 1))

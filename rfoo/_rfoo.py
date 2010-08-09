@@ -92,6 +92,7 @@ NOTIFY = 1
 
 # Compatible way to represent binary 'i' across Py2.x Py3.x.
 INTEGER = 'i'.encode()[0]
+EMPTY = ''.encode()
 
 LENGTH_THRESHOLD = 64
 LENGTH_FILLER = '_' * 64
@@ -225,25 +226,25 @@ class Connection(object):
         if len(buffer) == LENGTH_THRESHOLD and buffer[0] != INTEGER:
             return buffer
 
-        while len(buffer) < 5:
-            data = self.recv(5 - len(buffer))
-            if not data:
-                raise EofError(len(buffer))
-            buffer += data
+        if buffer == EMPTY:
+            raise EofError(0)
 
         if buffer[0] != INTEGER:
-            raise IOError()
+            return self._read(buffer, LENGTH_THRESHOLD)
 
-        length = _loads(buffer[:5])
-        buffer = buffer[5:]
+        buffer = self._read(buffer, 5)
+        length = _loads(buffer)
+        
+        return self._read(buffer[5:], length)
+
+    def _read(self, buffer, length):
         while len(buffer) < length:
             data = self.recv(length - len(buffer))
             if not data:
                 raise EofError(len(buffer))
             buffer += data
-
+    
         return buffer
-
 
 
 class InetConnection(Connection):

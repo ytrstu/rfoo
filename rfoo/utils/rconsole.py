@@ -26,11 +26,15 @@
 import rlcompleter
 import logging
 import pprint
-import thread
 import codeop
 import code
 import rfoo
 import sys
+
+try:
+    import thread
+except ImportError:
+    import _thread as thread
 
 
 PORT = 54321

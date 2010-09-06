@@ -130,8 +130,9 @@ class BaseHandler(object):
     Client can call public methods of derived classes.
     """
 
-    def __init__(self, addr=None):
+    def __init__(self, addr=None, context=None):
         self._addr = addr
+        self._context = context
         self._methods = {}
 
     def _close(self):
@@ -170,6 +171,17 @@ class BaseHandler(object):
         
         members = inspect.getmembers(self, inspect.ismethod)
         return [m[0] for m in members if not m[0].startswith('_')]
+
+
+def restrict_local(foo):
+    """Decorator to restrict handler method to local proxies only."""
+
+    def _restrict_local(self, *args, **kwargs):
+        if self._addr[0] != '127.0.0.1':
+            raise ValueError('Attempt to invoke method from remote address.')
+        return foo(self, *args, **kwargs)
+    
+    return _restrict_local
 
 
 
@@ -401,7 +413,8 @@ def run_in_thread(foo):
 class Server(object):
     """Serve calls over connection."""
 
-    def __init__(self, handler_type, conn=None):
+    def __init__(self, handler_type, handler_context=None, conn=None):
+        self._handler_context = handler_context
         self._handler_type = handler_type
         self._conn = conn
     
@@ -445,7 +458,7 @@ class Server(object):
             # Instantiate handler for the lifetime of the connection,
             # making it possible to manage a state between calls.
             #
-            handler = self._handler_type(addr)
+            handler = self._handler_type(addr, self._handler_context)
 
             try:
                 while True:
@@ -456,7 +469,8 @@ class Server(object):
 
         finally:
             c.close()
-            handler._close()
+            if 'handler' in locals():
+                handler._close()
 
     def _dispatch(self, handler, conn, n=1000):
         """Serve single call."""
@@ -489,10 +503,10 @@ class Server(object):
 class InetServer(Server):
     """Serve calls over INET sockets."""
     
-    def __init__(self, handler_type):
+    def __init__(self, handler_type, handler_context=None):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        Server.__init__(self, handler_type, s)
+        Server.__init__(self, handler_type, handler_context, s)
 
     def start(self, host=LOOPBACK, port=DEFAULT_PORT):
         self._conn.bind((host, port))
@@ -505,9 +519,9 @@ class InetServer(Server):
 class UnixServer(Server):
     """Serve calls over Unix sockets."""
     
-    def __init__(self, handler_type):
+    def __init__(self, handler_type, handler_context=None):
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        Server.__init__(self, handler_type, s)
+        Server.__init__(self, handler_type, handler_context, s)
 
     def start(self, path):
         self._conn.bind(path)
@@ -519,9 +533,6 @@ class UnixServer(Server):
 
 class PipeServer(Server):
     """Serve calls over pipes."""
-
-    def __init__(self, handler_type):
-        Server.__init__(self, handler_type)
 
     def start(self, pipe_socket):
         self._conn = pipe_socket._connect_server()

@@ -2,6 +2,24 @@
     rconsole.py
 
     A Python console you can embed in a program and attach to remotely.
+
+    To spawn a Python console in a script do the following in global scope
+    only (!) of any module:
+
+    from rfoo.utils import rconsole
+    rconsole.spawn_server()
+
+    This will start a listener for connections in a new thread. You may
+    specify a port to listen on.
+
+    To attach to the console from another shell use the rconsole script
+    (rfoo/scripts/rconsole) which may be installed in your path. 
+    Alternatively you may simply invoke interact().
+
+    SECURITY NOTE:
+    The listener started with spawn_server() will accept any local 
+    connection and may therefore be insecure to use in shared hosting
+    or similar environments!
 """
 
 
@@ -86,7 +104,7 @@ class ProxyConsole(code.InteractiveConsole):
 
     def __init__(self, port=PORT):
         code.InteractiveConsole.__init__(self)
-        self.port = PORT
+        self.port = port
         self.conn = None
 
     def interact(self, banner=None):

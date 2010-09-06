@@ -438,6 +438,7 @@ class Server(object):
 
             while True:
                 conn, addr = self._conn.accept()
+                conn.settimeout(None)
                 self._on_accept(conn, addr)
 
         finally:
@@ -506,6 +507,7 @@ class InetServer(Server):
     def __init__(self, handler_type, handler_context=None):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.settimeout(None)
         Server.__init__(self, handler_type, handler_context, s)
 
     def start(self, host=LOOPBACK, port=DEFAULT_PORT):
@@ -521,6 +523,7 @@ class UnixServer(Server):
     
     def __init__(self, handler_type, handler_context=None):
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(None)
         Server.__init__(self, handler_type, handler_context, s)
 
     def start(self, path):

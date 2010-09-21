@@ -61,9 +61,13 @@ import marshal as _marshal
 try:
     from rfoo.marsh import dumps, loads
 except ImportError:
-    sys.stderr.write("""To use rfoo directly from source archive first build
-the Cython extension module rfoo.marsh inplace with:
-    python setup.py build_ext --inplace\n""")
+    sys.stderr.write("""
+===========================================================    
+Did you just try to import rfoo directly from its source distribution?
+Well, that's possible, but first you need to build the 
+Cython extension rfoo.marsh (inplace) with:
+    python setup.py build_ext --inplace
+===========================================================\n""")
     raise
 
 try:

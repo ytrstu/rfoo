@@ -27,6 +27,7 @@ import rlcompleter
 import logging
 import pprint
 import codeop
+import socket
 import code
 import rfoo
 import sys
@@ -151,7 +152,14 @@ def spawn_server(namespace=None, port=PORT):
         namespace = sys._getframe(1).f_globals
     
     server = rfoo.InetServer(ConsoleHandler, namespace)
-    thread.start_new_thread(server.start, (rfoo.LOOPBACK, port))
+
+    def _wrapper():
+        try:
+            server.start(rfoo.LOOPBACK, port)
+        except socket.error:
+            logging.warning('Failed to bind rconsole to socket port, port=%r.', port)
+
+    thread.start_new_thread(_wrapper, ())
 
 
 def interact(banner=None, readfunc=None, port=PORT):

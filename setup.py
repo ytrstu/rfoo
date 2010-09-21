@@ -33,6 +33,7 @@
 """
 
 
+import sys
 
 from distutils.core import setup
 from distutils.extension import Extension
@@ -40,8 +41,8 @@ from distutils.extension import Extension
 try:
     from Cython.Distutils import build_ext
 except ImportError:
-    import sys
-    sys.stderr.write("""rfoo depends on Cython - http://cython.org/
+    sys.stderr.write("""===========================================================
+rfoo depends on Cython - http://cython.org/
 
 To install Cython follow the simple instructions at:
 http://docs.cython.org/src/quickstart/install.html
@@ -50,7 +51,21 @@ Basically, you need gcc installed on your system:
     sudo apt-get install build-essential
 
 and then setup the latest source version of Cython with:
-    sudo python setup.py install\n""")
+    sudo python setup.py install
+===========================================================\n""")
+    sys.exit(1)
+
+
+if 'bdist_egg' in sys.argv:
+    sys.stderr.write("""===========================================================
+rfoo can not be installed by easy_install due to conflict 
+between easy_install and Cython:
+http://mail.python.org/pipermail/distutils-sig/2007-September/008205.html
+
+To install rfoo, download the source archive, extract it
+and install with:
+    sudo python setup.py install
+===========================================================\n""")
     sys.exit(1)
 
 
@@ -59,7 +74,7 @@ ext_modules = [Extension("rfoo.marsh", ["rfoo/marsh.pyx"])]
 
 setup(
     name = 'rfoo',
-    version = '1.2.8',
+    version = '1.3.0',
     description = 'Fast RPC client/server module.',
     author = 'Nir Aides',
     author_email = 'nir@winpdb.org',
